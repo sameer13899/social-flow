@@ -125,6 +125,15 @@ If `social` is not recognized in your current terminal, open a new terminal and 
 social studio --url https://<railway-domain> --frontend-url https://<frontend-domain>
 ```
 
+By default, `social studio` opens the bundled Studio app at `/studio/app`.
+The contextual gateway landing remains available at `/studio` (also `/studio/context`).
+
+Local UI project launcher (auto-starts Vite dev server):
+
+```bash
+social studio --frontend-path C:\Users\you\Downloads\social-flow-ui
+```
+
 Local prototype preview:
 
 ```bash

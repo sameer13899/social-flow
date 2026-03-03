@@ -164,7 +164,7 @@ module.exports = [
     }
   },
   {
-    name: 'gateway root endpoint returns deprecation response with bundled studio disabled',
+    name: 'gateway root endpoint returns deprecation response and points to studio routes',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
@@ -179,7 +179,7 @@ module.exports = [
         assert.equal(root.status, 410);
         assert.equal(String(root.headers['content-type'] || '').includes('application/json'), true);
         assert.equal(
-          String(root.raw || '').includes('Bundled Studio frontend is disabled'),
+          String(root.raw || '').includes('Open /studio/app for bundled Studio UI'),
           true
         );
 
@@ -193,6 +193,127 @@ module.exports = [
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
+      }
+    }
+  },
+  {
+    name: 'gateway studio route serves contextual landing page',
+    fn: async () => {
+      const oldHome = process.env.META_CLI_HOME;
+      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
+      try {
+        await server.start();
+        const studio = await requestRaw({
+          port: server.port,
+          method: 'GET',
+          pathName: '/studio'
+        });
+        assert.equal(studio.status, 200);
+        assert.equal(String(studio.headers['content-type'] || '').includes('text/html'), true);
+        assert.equal(String(studio.raw || '').includes('Social Flow Studio'), true);
+        assert.equal(String(studio.raw || '').includes('/api/health'), true);
+      } finally {
+        await server.stop();
+        process.env.META_CLI_HOME = oldHome;
+      }
+    }
+  },
+  {
+    name: 'gateway studio context alias serves contextual landing page',
+    fn: async () => {
+      const oldHome = process.env.META_CLI_HOME;
+      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
+      try {
+        await server.start();
+        const studio = await requestRaw({
+          port: server.port,
+          method: 'GET',
+          pathName: '/studio/context'
+        });
+        assert.equal(studio.status, 200);
+        assert.equal(String(studio.headers['content-type'] || '').includes('text/html'), true);
+        assert.equal(String(studio.raw || '').includes('Context Landing'), true);
+      } finally {
+        await server.stop();
+        process.env.META_CLI_HOME = oldHome;
+      }
+    }
+  },
+  {
+    name: 'gateway bundled studio app route serves static frontend',
+    fn: async () => {
+      const oldHome = process.env.META_CLI_HOME;
+      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
+      try {
+        await server.start();
+        const app = await requestRaw({
+          port: server.port,
+          method: 'GET',
+          pathName: '/studio/app'
+        });
+        assert.equal(app.status, 200);
+        assert.equal(String(app.headers['content-type'] || '').includes('text/html'), true);
+        assert.equal(String(app.raw || '').includes('<div id="root"></div>'), true);
+        assert.equal(String(app.raw || '').includes('/assets/'), true);
+      } finally {
+        await server.stop();
+        process.env.META_CLI_HOME = oldHome;
+      }
+    }
+  },
+  {
+    name: 'gateway bundled studio app route works when cwd is outside repo root',
+    fn: async () => {
+      const oldHome = process.env.META_CLI_HOME;
+      const oldCwd = process.cwd();
+      const externalCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-cwd-'));
+      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
+      try {
+        process.chdir(externalCwd);
+        await server.start();
+        const app = await requestRaw({
+          port: server.port,
+          method: 'GET',
+          pathName: '/studio/app'
+        });
+        assert.equal(app.status, 200);
+        assert.equal(String(app.headers['content-type'] || '').includes('text/html'), true);
+        assert.equal(String(app.raw || '').includes('<div id="root"></div>'), true);
+      } finally {
+        await server.stop();
+        process.chdir(oldCwd);
+        fs.rmSync(externalCwd, { recursive: true, force: true });
+        process.env.META_CLI_HOME = oldHome;
+      }
+    }
+  },
+  {
+    name: 'gateway studio route is reserved even when static asset roots are configured',
+    fn: async () => {
+      const oldHome = process.env.META_CLI_HOME;
+      const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
+      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      process.env.SOCIAL_STUDIO_ASSET_DIRS = path.resolve(process.cwd(), 'docs', 'agentic-frontend');
+      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
+      try {
+        await server.start();
+        const studio = await requestRaw({
+          port: server.port,
+          method: 'GET',
+          pathName: '/studio'
+        });
+        assert.equal(studio.status, 200);
+        assert.equal(String(studio.headers['content-type'] || '').includes('text/html'), true);
+        assert.equal(String(studio.raw || '').includes('Context Landing'), true);
+      } finally {
+        await server.stop();
+        process.env.META_CLI_HOME = oldHome;
+        if (oldStudioDirs === undefined) delete process.env.SOCIAL_STUDIO_ASSET_DIRS;
+        else process.env.SOCIAL_STUDIO_ASSET_DIRS = oldStudioDirs;
       }
     }
   },
@@ -276,6 +397,7 @@ module.exports = [
         assert.equal(Boolean(res.data.config), true);
         assert.equal(typeof res.data.config.tokens.facebook.configured, 'boolean');
         assert.equal(typeof res.data.config.agent.apiKeyConfigured, 'boolean');
+        assert.equal(typeof res.data.config.industry.legacySelected, 'string');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;

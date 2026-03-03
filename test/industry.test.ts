@@ -25,7 +25,7 @@ function withTempHome(fn) {
 
 module.exports = [
   {
-    name: 'industry detector identifies real estate from property + UAE signals',
+    name: 'industry detector identifies UAE real estate from property + UAE signals',
     fn: () => {
       const out = detector.detectIndustry({
         campaignNames: ['Dubai Marina Luxury Apartments Lead Gen'],
@@ -33,7 +33,24 @@ module.exports = [
         events: ['Lead'],
         geo: 'Dubai UAE'
       });
-      assert.equal(out.recommended, 'real_estate');
+      assert.equal(out.recommended, 'real_estate_uae');
+      assert.equal(out.recommendedLegacy, 'real_estate');
+      assert.equal(typeof out.confidence, 'number');
+      assert.equal(Array.isArray(out.ranked), true);
+      assert.equal(out.ranked.length >= 3, true);
+    }
+  },
+  {
+    name: 'industry detector identifies India real estate from property + India signals',
+    fn: () => {
+      const out = detector.detectIndustry({
+        campaignNames: ['Mumbai 2 BHK Launch Lead Campaign'],
+        objectives: ['LEAD_GENERATION'],
+        events: ['Lead'],
+        geo: 'Mumbai India'
+      });
+      assert.equal(out.recommended, 'real_estate_india');
+      assert.equal(out.recommendedLegacy, 'real_estate');
       assert.equal(typeof out.confidence, 'number');
       assert.equal(Array.isArray(out.ranked), true);
       assert.equal(out.ranked.length >= 3, true);
@@ -53,6 +70,30 @@ module.exports = [
     }
   },
   {
+    name: 'industry normalizer keeps backward compatibility for generic real_estate alias',
+    fn: () => {
+      assert.equal(detector.normalizeIndustry('real_estate'), 'real_estate_india');
+      assert.equal(detector.normalizeIndustry('re_uae'), 'real_estate_uae');
+      assert.equal(detector.legacyIndustryId('real_estate_india'), 'real_estate');
+      assert.equal(detector.legacyIndustryId('real_estate_uae'), 'real_estate');
+    }
+  },
+  {
+    name: 'industry detector flags ambiguous split between India and UAE real-estate',
+    fn: () => {
+      const out = detector.detectIndustry({
+        campaignNames: ['Luxury apartment lead campaign'],
+        objectives: ['LEAD_GENERATION'],
+        events: ['Lead']
+      });
+      assert.equal(out.requiresDisambiguation, true);
+      assert.equal(Boolean(out.disambiguation), true);
+      assert.equal(Array.isArray(out.disambiguation.options), true);
+      assert.equal(out.disambiguation.options.includes('real_estate_india'), true);
+      assert.equal(out.disambiguation.options.includes('real_estate_uae'), true);
+    }
+  },
+  {
     name: 'industry config supports mode, manual lock, and account overrides',
     fn: () => withTempHome(() => {
       const { ConfigManager } = configSingleton;
@@ -68,8 +109,14 @@ module.exports = [
       cfg.setIndustryManual('edtech');
       const manual = cfg.getIndustryConfig();
       assert.equal(manual.selected, 'edtech');
+      assert.equal(manual.legacySelected, 'edtech');
       assert.equal(manual.source, 'manual');
       assert.equal(manual.manualLocked, true);
+
+      cfg.setIndustryManual('real_estate_uae');
+      const realEstate = cfg.getIndustryConfig();
+      assert.equal(realEstate.selected, 'real_estate_uae');
+      assert.equal(realEstate.legacySelected, 'real_estate');
 
       cfg.setIndustryDetection({
         selected: 'ecommerce',

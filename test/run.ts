@@ -37,6 +37,7 @@ async function run() {
       'chat.test',
       'onboarding-ready.test',
       'gateway.test',
+      'studio-command.test',
       'policy.test',
       'ops.test',
       'hub.test',

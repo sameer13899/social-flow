@@ -43,3 +43,9 @@ If you host this frontend somewhere (local or cloud), use:
 social studio --url http://127.0.0.1:1310 --frontend-url http://127.0.0.1:4173
 ```
 
+For a local Vite Studio project folder:
+
+```bash
+social studio --url http://127.0.0.1:1310 --frontend-path C:\Users\you\Downloads\social-flow-ui
+```
+

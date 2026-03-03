@@ -19,7 +19,18 @@ Supported workflow categories:
 - Marketing/content operations (posts, campaigns, analytics)
 - Developer operations (auth status, token debug, webhook subscription checks)
 
-Bundled Studio UI is disabled on `/` in current builds. Use an external frontend and connect to `/api/*` + `/ws`.
+Root `/` is disabled by default in current builds.
+Bundled Studio UI is served at `/studio/app` and contextual guidance is served at `/studio` (or `/studio/context`).
+If you want gateway to serve additional static Studio assets, set:
+
+- `SOCIAL_STUDIO_ASSET_DIRS=<comma-separated-absolute-or-relative-dirs>`
+
+Each directory must be inside allowed gateway roots (project root / configured CLI home).
+
+Studio routes:
+
+- `GET /studio` or `GET /studio/context` (health/auth/readiness-aware launch page)
+- `GET /studio/app` (bundled Studio frontend SPA)
 
 ## Endpoints
 
@@ -112,4 +123,16 @@ It includes:
 
 - `src-runtime/commands/gateway.ts`
 - `lib/gateway/server.ts`
+
+## Studio Command Wiring
+
+`social studio` supports:
+
+- `--frontend-url <url>` for already-hosted UI
+- `--frontend-path <path>` for local Studio projects (auto-starts local dev server or static host)
+
+Default behavior:
+
+- Without frontend overrides, `social studio` opens bundled app route: `/studio/app`
+- Context landing remains reachable at `/studio`
 

@@ -249,8 +249,10 @@ program.on('--help', () => {
   console.log(`  ${cmd('stop')}                    ` + chalk.gray('# Stop background gateway'));
   console.log(`  ${cmd('status')}                  ` + chalk.gray('# Runtime status + setup readiness'));
   console.log(`  ${cmd('logs --lines 120')}        ` + chalk.gray('# Show gateway logs'));
-  console.log(`  ${cmd('studio')}                  ` + chalk.gray('# Open gateway status page (browser)'));
+  console.log(`  ${cmd('studio')}                  ` + chalk.gray('# Open bundled Studio app route (browser)'));
+  console.log(`  ${cmd('studio --no-open')}        ` + chalk.gray('# Print Studio app/context URLs without opening browser'));
   console.log(`  ${cmd('studio --url https://api.example.com --frontend-url https://studio.example.com')}  ` + chalk.gray('# Open external frontend against remote gateway'));
+  console.log(`  ${cmd('studio --frontend-path C:\\\\Users\\\\you\\\\Downloads\\\\social-flow-ui')}  ` + chalk.gray('# Auto-start a local Studio frontend project and connect it to gateway'));
   console.log(`  ${cmd('guide')}                   ` + chalk.gray('# Universal step-by-step guidance sequence'));
   console.log(`  ${cmd('start-here')}              ` + chalk.gray('# Unified setup: AI config + tokens + health verification'));
   console.log(`  ${cmd('industry detect')}         ` + chalk.gray('# Hybrid industry detection + confidence'));

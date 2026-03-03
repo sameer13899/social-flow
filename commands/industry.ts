@@ -189,6 +189,8 @@ function registerIndustryCommands(program) {
 
       if (current.manualLocked && !options.force) {
         applyReason = 'manual_lock';
+      } else if (result.requiresDisambiguation && !options.apply) {
+        applyReason = 'market_disambiguation';
       } else if (options.apply) {
         applyNow = true;
         applyReason = 'forced_apply';
@@ -235,6 +237,10 @@ function registerIndustryCommands(program) {
         console.log(chalk.green(`Applied detected industry: ${next.selected || result.recommended}\n`));
       } else if (applyReason === 'manual_lock') {
         console.log(chalk.yellow('Manual lock is enabled. Run `social industry unlock` or pass --force to override.\n'));
+      } else if (applyReason === 'market_disambiguation') {
+        console.log(chalk.yellow('Real-estate market split is ambiguous. Set the market explicitly:'));
+        console.log(chalk.gray('  social industry set real_estate_india'));
+        console.log(chalk.gray('  social industry set real_estate_uae\n'));
       } else if (applyReason === 'manual_mode') {
         console.log(chalk.yellow('Mode is manual. Detection is advisory only. Use `social industry set <industry>`.\n'));
       } else if (applyReason === 'low_confidence') {

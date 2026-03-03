@@ -34,13 +34,40 @@ function sanitizeProfileName(name) {
   return safe || 'default';
 }
 
-const INDUSTRY_IDS = ['real_estate', 'ecommerce', 'edtech', 'healthcare', 'local_services'];
+const INDUSTRY_IDS = [
+  'real_estate_india',
+  'real_estate_uae',
+  'ecommerce',
+  'edtech',
+  'healthcare',
+  'local_services'
+];
 const INDUSTRY_MODES = ['hybrid', 'auto', 'manual'];
 
 function normalizeIndustryId(value) {
   const raw = String(value || '').trim().toLowerCase();
   if (!raw) return '';
-  if (['real_estate', 'real-estate', 'realestate', 'property'].includes(raw)) return 'real_estate';
+  if ([
+    'real_estate',
+    'real-estate',
+    'realestate',
+    'property',
+    'real_estate_india',
+    'real-estate-india',
+    'realestateindia',
+    'property_india',
+    'india_property',
+    're_india'
+  ].includes(raw)) return 'real_estate_india';
+  if ([
+    'real_estate_uae',
+    'real-estate-uae',
+    'realestateuae',
+    'property_uae',
+    'uae_property',
+    'dubai_property',
+    're_uae'
+  ].includes(raw)) return 'real_estate_uae';
   if (['ecommerce', 'e-commerce', 'commerce'].includes(raw)) return 'ecommerce';
   if (['edtech', 'education', 'course', 'courses'].includes(raw)) return 'edtech';
   if (['healthcare', 'clinic', 'health'].includes(raw)) return 'healthcare';
@@ -51,6 +78,13 @@ function normalizeIndustryId(value) {
 function normalizeIndustryMode(value) {
   const raw = String(value || '').trim().toLowerCase();
   return INDUSTRY_MODES.includes(raw) ? raw : 'hybrid';
+}
+
+function legacyIndustryId(value) {
+  const normalized = normalizeIndustryId(value);
+  if (!normalized) return '';
+  if (normalized === 'real_estate_india' || normalized === 'real_estate_uae') return 'real_estate';
+  return normalized;
 }
 
 function sanitizeAdAccountId(value) {
@@ -557,6 +591,7 @@ class ConfigManager {
     return {
       mode,
       selected: effective.selected || '',
+      legacySelected: legacyIndustryId(effective.selected || ''),
       source: effective.source || '',
       confidence: effective.confidence || 0,
       detectorVersion: effective.detectorVersion || '',
