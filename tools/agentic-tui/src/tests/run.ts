@@ -1,14 +1,18 @@
 import { actionBarTests } from "../tui/action-bar.test.js";
+import { commandAssistTests } from "../tui/command-assist.test.js";
 import { domainSkillTests } from "../tui/domain-skills.test.js";
 import { shortcutHandlerTests } from "../tui/tui-event-handlers.test.js";
 import { sessionActionTests } from "../tui/tui-session-actions.test.js";
+import { registryExecutorTests } from "../executors/registry.test.js";
 import { parserIntentTests, type TuiTestCase } from "../parser/intent-parser.test.js";
 
 async function run() {
   const tests: TuiTestCase[] = [
     ...parserIntentTests,
     ...actionBarTests,
+    ...commandAssistTests,
     ...domainSkillTests,
+    ...registryExecutorTests,
     ...shortcutHandlerTests,
     ...sessionActionTests
   ];

@@ -107,6 +107,7 @@ function inferAction(input: string): ParsedIntent["action"] {
   const guideTopic = detectGuideTopic(s);
   const domainTopic = detectDomainTopic(s);
   if (/\bsocial\s+hatch\b/.test(s) || /\bsocial\s+tui\b/.test(s)) return "help";
+  if (/^\s*social(?:-flow)?\s+\S/.test(s)) return "run_cli";
   if (guideTopic) return "guide";
   if (/\b(help|what can you do|what do you do|show commands|how do i use|start here)\b/.test(s)) return "help";
   if (/\b(hi|hello|hey|yo|hola|good morning|good evening|good afternoon)\b/.test(s)) return "status";
@@ -155,6 +156,7 @@ function deterministicConfidenceScore(input: string, intent: ParsedIntent): numb
   if (intent.action === "status" && hasGreeting) return 0.95;
   if (intent.action === "help" && hasCapabilityQuestion) return 0.92;
   if (intent.action === "help" && shortQuestion) return 0.74;
+  if (intent.action === "run_cli") return 0.99;
   if (intent.action === "guide") return intent.params.topic ? 0.9 : 0.78;
   if (intent.action === "onboard") return intent.params.token ? 0.9 : 0.7;
   if (intent.action === "create_post") return intent.params.message ? 0.86 : 0.68;
@@ -231,6 +233,7 @@ function buildDeterministicIntent(input: string): ParsedIntent {
   const text = String(input || "").trim();
   const action = inferAction(text);
   const params: Record<string, string> = {
+    command: text,
     token: text.match(/\btoken\s+([^\s]+)/i)?.[1] || "",
     graphVersion: text.match(/\bgraph(?:[-_\s]?version)?\s+(v\d+\.\d+)/i)?.[1] || "",
     scopes: text.match(/\bscopes?\s+([a-z0-9_,.\s-]+)/i)?.[1]?.replace(/\s+/g, "") || "",
@@ -255,6 +258,9 @@ function buildDeterministicIntent(input: string): ParsedIntent {
   }
   if (action === "guide") {
     return { action, params: { topic: params.topic || "setup-auth" } };
+  }
+  if (action === "run_cli") {
+    return { action, params: { command: params.command } };
   }
   if (action === "help" || action === "doctor" || action === "status" || action === "config") {
     return { action, params: {} };
@@ -312,6 +318,9 @@ export async function parseNaturalLanguageWithOptionalAi(input: string): Promise
   const cleanInput = explicitAi ? raw.slice(4).trim() : raw;
   const cleanLower = cleanInput.toLowerCase();
   const deterministic = parseNaturalLanguage(cleanInput);
+  if (!explicitAi && deterministic.intent.action === "run_cli") {
+    return deterministic;
+  }
   const autoAiEnabled = !/^(0|false|off|no)$/i.test(String(process.env.SOCIAL_TUI_AI_AUTO || "1"));
   const configuredProvider = normalizeAiProvider(
     process.env.SOCIAL_TUI_AI_PROVIDER

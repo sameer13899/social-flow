@@ -2,6 +2,7 @@ export type ActionType =
   | "onboard"
   | "guide"
   | "help"
+  | "run_cli"
   | "doctor"
   | "status"
   | "config"

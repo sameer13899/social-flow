@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { ExecutionResult, ParsedIntent, RiskLevel } from "../types.js";
+import { maskCommandSecrets } from "../tui/command-assist.js";
 
 export type Executor = (intent: ParsedIntent) => Promise<ExecutionResult>;
 
@@ -154,6 +156,272 @@ async function executeViaCoreRouter(intent: ParsedIntent): Promise<ExecutionResu
   };
 }
 
+type CapturedCommandResult = {
+  ok: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  runner: string;
+};
+
+type SocialCliRunner = {
+  command: string;
+  baseArgs: string[];
+  runner: string;
+};
+
+function parseCommandTokens(raw: string): string[] {
+  const text = String(raw || "").trim();
+  if (!text) return [];
+  const out: string[] = [];
+  const token = /"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`|([^\s]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = token.exec(text)) !== null) {
+    const value = match[1] ?? match[2] ?? match[3] ?? match[4] ?? "";
+    out.push(value.replace(/\\(["'`\\])/g, "$1"));
+  }
+  return out;
+}
+
+function hasFlag(tokens: string[], flags: string[]): boolean {
+  return tokens.some((token) => {
+    const value = String(token || "");
+    return flags.some((flag) => value === flag || value.startsWith(`${flag}=`));
+  });
+}
+
+function flagValue(tokens: string[], flags: string[]): string {
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = String(tokens[i] || "");
+    for (const flag of flags) {
+      if (token === flag) {
+        const next = String(tokens[i + 1] || "");
+        if (next && !next.startsWith("-")) return next;
+      }
+      if (token.startsWith(`${flag}=`)) {
+        return token.slice(flag.length + 1);
+      }
+    }
+  }
+  return "";
+}
+
+type InteractiveCliGuard = {
+  blocked: boolean;
+  reason: string;
+  suggestion: string;
+};
+
+function detectInteractiveCliGuard(tokens: string[]): InteractiveCliGuard {
+  const cmd = String(tokens[1] || "").toLowerCase();
+  const sub = String(tokens[2] || "").toLowerCase();
+
+  if (cmd === "auth" && !sub) {
+    return {
+      blocked: true,
+      reason: "This command needs a sub-command.",
+      suggestion: "social auth login -a facebook"
+    };
+  }
+
+  if (cmd === "auth" && sub === "login") {
+    const api = (flagValue(tokens, ["--api", "-a"]) || "facebook").toLowerCase();
+    const token = flagValue(tokens, ["--token", "-t"]);
+    const useOauth = hasFlag(tokens, ["--oauth"]);
+    const asksScopePrompt = hasFlag(tokens, ["--scopes"]);
+    if (!token || useOauth || asksScopePrompt) {
+      const nextApi = api === "instagram" || api === "whatsapp" ? api : "facebook";
+      return {
+        blocked: true,
+        reason: "This command needs interactive input/browser steps, which Hatch passthrough cannot run safely.",
+        suggestion: `social auth login -a ${nextApi} --token YOUR_${nextApi.toUpperCase()}_TOKEN --no-open`
+      };
+    }
+  }
+
+  if (cmd === "auth" && sub === "app") {
+    const appId = flagValue(tokens, ["--id"]);
+    const appSecret = flagValue(tokens, ["--secret"]);
+    if (!appId || !appSecret) {
+      return {
+        blocked: true,
+        reason: "This command prompts for App ID/Secret interactively, which Hatch passthrough cannot run.",
+        suggestion: "social auth app --id APP_ID --secret APP_SECRET --no-open"
+      };
+    }
+  }
+
+  if (cmd === "onboard" || cmd === "setup" || cmd === "start-here") {
+    return {
+      blocked: true,
+      reason: "This is an interactive wizard command and cannot run inside Hatch passthrough mode.",
+      suggestion: `social ${cmd} --help`
+    };
+  }
+
+  if (cmd === "integrations" && sub === "connect" && String(tokens[3] || "").toLowerCase() === "waba") {
+    const hasToken = Boolean(flagValue(tokens, ["--token"]));
+    const hasBusinessId = Boolean(flagValue(tokens, ["--business-id", "--businessId"]));
+    const hasWabaId = Boolean(flagValue(tokens, ["--waba-id", "--wabaId"]));
+    const hasPhoneNumberId = Boolean(flagValue(tokens, ["--phone-number-id", "--phoneNumberId"]));
+    if (!hasToken || !hasBusinessId || !hasWabaId || !hasPhoneNumberId) {
+      return {
+        blocked: true,
+        reason: "WABA connect needs interactive prompts for missing fields, which Hatch passthrough cannot run.",
+        suggestion: "waba setup"
+      };
+    }
+  }
+
+  return { blocked: false, reason: "", suggestion: "" };
+}
+
+function resolveSocialCliRunner(): SocialCliRunner {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(here, "../../../../");
+  const localCandidates = [
+    path.join(repoRoot, "dist-legacy", "bin", "social.js"),
+    path.join(repoRoot, "bin", "social.js")
+  ];
+  for (const candidate of localCandidates) {
+    if (existsSync(candidate)) {
+      return { command: process.execPath, baseArgs: [candidate], runner: candidate };
+    }
+  }
+  return { command: process.platform === "win32" ? "social.cmd" : "social", baseArgs: [], runner: "PATH:social" };
+}
+
+function appendBounded(current: string, chunk: string, maxChars: number): string {
+  if (!chunk) return current;
+  const remaining = Math.max(0, maxChars - current.length);
+  if (remaining <= 0) return current;
+  return current + chunk.slice(0, remaining);
+}
+
+async function runCapturedCommand(command: string, args: string[], opts: {
+  timeoutMs?: number;
+  maxChars?: number;
+  runner?: string;
+} = {}): Promise<CapturedCommandResult> {
+  const timeoutMs = Math.max(5000, opts.timeoutMs || 45_000);
+  const maxChars = Math.max(2048, opts.maxChars || 14_000);
+  return await new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let settled = false;
+    const child = spawn(command, args, {
+      cwd: process.cwd(),
+      env: process.env,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    const done = (payload: CapturedCommandResult) => {
+      if (settled) return;
+      settled = true;
+      resolve(payload);
+    };
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string | Buffer) => {
+      stdout = appendBounded(stdout, String(chunk), maxChars);
+    });
+    child.stderr?.on("data", (chunk: string | Buffer) => {
+      stderr = appendBounded(stderr, String(chunk), maxChars);
+    });
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      stderr = appendBounded(stderr, `\nCommand timed out after ${timeoutMs}ms.`, maxChars);
+      child.kill("SIGTERM");
+    }, timeoutMs);
+
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      done({
+        ok: false,
+        exitCode: -1,
+        stdout: stdout.trim(),
+        stderr: appendBounded(stderr, String(error?.message || error), maxChars).trim(),
+        timedOut,
+        runner: opts.runner || command
+      });
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      const exitCode = typeof code === "number" ? code : -1;
+      done({
+        ok: exitCode === 0 && !timedOut,
+        exitCode,
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        timedOut,
+        runner: opts.runner || command
+      });
+    });
+  });
+}
+
+async function executeSocialCliIntent(intent: ParsedIntent): Promise<ExecutionResult> {
+  const raw = String(intent.params.command || "").trim();
+  const displayCommand = maskCommandSecrets(raw);
+  if (!raw) return { ok: false, output: { error: "Missing command. Use: social <command>" } };
+
+  const tokens = parseCommandTokens(raw);
+  if (!tokens.length) return { ok: false, output: { error: "Unable to parse command tokens." } };
+
+  const binary = String(tokens[0] || "").toLowerCase();
+  if (binary !== "social" && binary !== "social-flow") {
+    return { ok: false, output: { error: "Only `social` commands are allowed in Hatch chat passthrough." } };
+  }
+
+  const interactiveGuard = detectInteractiveCliGuard(tokens);
+  if (interactiveGuard.blocked) {
+    return {
+      ok: false,
+      output: {
+        command: displayCommand,
+        exit_code: 2,
+        runner: "guard",
+        timed_out: false,
+        stdout: "",
+        stderr: "",
+        suggestion: interactiveGuard.suggestion,
+        error: `${interactiveGuard.reason} Try: ${interactiveGuard.suggestion}`
+      },
+      rollback: {
+        note: "Command not executed due to interactive requirement.",
+        status: "DONE"
+      }
+    };
+  }
+
+  const runner = resolveSocialCliRunner();
+  const args = [...runner.baseArgs, ...tokens.slice(1)];
+  const result = await runCapturedCommand(runner.command, args, { runner: runner.runner });
+  const stderr = String(result.stderr || "").trim();
+  return {
+    ok: result.ok,
+    output: {
+      command: displayCommand,
+      exit_code: result.exitCode,
+      runner: result.runner,
+      timed_out: result.timedOut,
+      stdout: result.stdout,
+      stderr,
+      error: result.ok ? "" : (stderr || `Command failed with exit code ${result.exitCode}.`)
+    },
+    rollback: {
+      note: "Executed explicit CLI command. No automatic rollback available.",
+      status: "STUB"
+    }
+  };
+}
+
 const executors: Record<ParsedIntent["action"], RegisteredExecutor> = {
   onboard: {
     action: "onboard",
@@ -292,6 +560,11 @@ const executors: Record<ParsedIntent["action"], RegisteredExecutor> = {
         status: "DONE"
       }
     })
+  },
+  run_cli: {
+    action: "run_cli",
+    risk: "LOW",
+    execute: executeSocialCliIntent
   },
   doctor: {
     action: "doctor",

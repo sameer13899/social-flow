@@ -76,11 +76,20 @@ export const parserIntentTests: TuiTestCase[] = [
     }
   },
   {
-    name: "domain command-like instagram phrasing maps to guide instead of unknown",
+    name: "explicit social command maps to run_cli passthrough",
     fn: () => {
-      const parsed = parseNaturalLanguage("social insta list accounts");
-      assert.equal(parsed.intent.action, "guide");
-      assert.equal(parsed.intent.params.topic, "instagram");
+      const parsed = parseNaturalLanguage("social insta accounts list");
+      assert.equal(parsed.intent.action, "run_cli");
+      assert.equal(parsed.intent.params.command, "social insta accounts list");
+      assert.equal(parsed.valid, true);
+    }
+  },
+  {
+    name: "social status stays as explicit command passthrough",
+    fn: () => {
+      const parsed = parseNaturalLanguage("social status");
+      assert.equal(parsed.intent.action, "run_cli");
+      assert.equal(parsed.intent.params.command, "social status");
       assert.equal(parsed.valid, true);
     }
   },

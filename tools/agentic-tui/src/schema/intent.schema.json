@@ -14,6 +14,7 @@
         "onboard",
         "guide",
         "help",
+        "run_cli",
         "doctor",
         "status",
         "config",

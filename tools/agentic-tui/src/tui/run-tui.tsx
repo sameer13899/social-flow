@@ -11,6 +11,13 @@ import { ThemeProvider, useTheme } from "../ui/theme.js";
 import { handleSlashCommand } from "./tui-command-handlers.js";
 import { handleShortcut } from "./tui-event-handlers.js";
 import { buildActionBarHint } from "./action-bar.js";
+import {
+  detectAuthAssist,
+  maskCommandSecrets,
+  parseAuthApiChoice,
+  rewriteStudioShorthand,
+  type AuthApi
+} from "./command-assist.js";
 import { detectDomainSkill } from "./domain-skills.js";
 import {
   accountOptionsFromConfig,
@@ -86,6 +93,11 @@ function shortText(text: string, limit = 120): string {
   const value = String(text || "").trim().replace(/\s+/g, " ");
   if (value.length <= limit) return value;
   return `${value.slice(0, limit - 3)}...`;
+}
+
+function looksLikeCancelWord(input: string): boolean {
+  const text = String(input || "").trim().toLowerCase();
+  return text === "cancel" || text === "stop" || text === "abort" || text === "exit";
 }
 
 function looksLikeGreetingOnly(input: string): boolean {
@@ -215,7 +227,8 @@ function extractOpenAiCompatibleContent(payload: unknown): string {
 
 async function callConversationalAi(cfg: ChatReplyAiConfig, messages: Array<{ role: "system" | "user"; content: string }>): Promise<string> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12_000);
+  const timeoutMs = Math.max(1200, Number.parseInt(process.env.SOCIAL_TUI_CHAT_REPLY_TIMEOUT_MS || "3500", 10) || 3500);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     if (cfg.provider === "ollama") {
       const response = await fetch(`${cfg.baseUrl.replace(/\/+$/, "")}/api/chat`, {
@@ -266,6 +279,7 @@ function sanitizeConversationalReply(value: string, fallback: string): string {
 }
 
 async function generateConversationalReply(input: ConversationalReplyInput): Promise<string> {
+  if (input.mode === "result" || input.intentAction === "run_cli") return input.fallback;
   const cfg = resolveChatReplyAiConfig();
   if (!cfg.enabled) return input.fallback;
 
@@ -323,6 +337,7 @@ function formatToolCall(intent: ParsedIntent): string {
 function describeAction(action: ParsedIntent["action"]): string {
   if (action === "guide") return "run a guided setup path";
   if (action === "help") return "show available capabilities";
+  if (action === "run_cli") return "execute the exact social CLI command you typed";
   if (action === "doctor") return "run diagnostics";
   if (action === "status" || action === "get_status") return "check runtime status";
   if (action === "config") return "show sanitized config";
@@ -354,6 +369,27 @@ function summarizeExecutionForChat(intent: ParsedIntent, result: ExecutionResult
 
   if (!result.ok) {
     const error = String(output.error || "").trim();
+    if (intent.action === "run_cli") {
+      const code = Number(output.exit_code);
+      const command = String(output.command || "").trim().toLowerCase();
+      const suggestion = String(output.suggestion || "").trim();
+      const suffix = Number.isFinite(code) && code >= 0 ? ` (${code})` : "";
+      if (error.toLowerCase().includes("unknown command 'tokens'")) {
+        return "There is no `social tokens` command. Try `social auth status`.";
+      }
+      if (command === "social auth") {
+        return "Use `social auth login`, `social auth status`, or `social auth logout -a all`.";
+      }
+      if (error.toLowerCase().includes("display help for command") && command.startsWith("social auth")) {
+        return "For auth, start with `social auth login` and I will guide the rest.";
+      }
+      if (suggestion) {
+        return `social command failed${suffix}: ${shortText(error, 150)} Try: \`${suggestion}\``;
+      }
+      return error
+        ? `social command failed${suffix}: ${shortText(error, 180)}`
+        : `social command failed${suffix}.`;
+    }
     const setupIssue = isSetupOrAuthError(error);
     if (intent.action === "unknown") {
       return "I didn't fully understand that yet. Try `what can you do`, `status`, or `/help`.";
@@ -374,12 +410,13 @@ function summarizeExecutionForChat(intent: ParsedIntent, result: ExecutionResult
 
   if (intent.action === "guide") {
     const label = String(output.label || output.topic || "Setup");
+    const message = String(output.message || "").trim();
     const suggestions = Array.isArray(output.suggestions)
       ? output.suggestions.map((x) => String(x)).filter(Boolean).slice(0, 3)
       : [];
     return suggestions.length
-      ? `${label} guidance is ready. Try: ${suggestions.join(" | ")}`
-      : `${label} guidance is ready.`;
+      ? `${label}: ${shortText(message || "I can guide this flow.", 120)} Next: ${suggestions.map((x) => `\`${x}\``).join(" | ")}`
+      : `${label}: ${shortText(message || "Guidance is ready.", 140)}`;
   }
 
   if (intent.action === "help") {
@@ -389,6 +426,21 @@ function summarizeExecutionForChat(intent: ParsedIntent, result: ExecutionResult
     return suggestions.length
       ? `Hey, I can help with setup, status, profiles, posts, ads, logs, and replay. Try: ${suggestions.join(" | ")}`
       : "Hey, I can help with setup, status, profiles, posts, ads, logs, and replay.";
+  }
+
+  if (intent.action === "run_cli") {
+    const command = String(output.command || "social ...").trim();
+    const stdout = String(output.stdout || "").trim();
+    if (stdout) {
+      const preview = stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 3)
+        .join(" | ");
+      return preview ? `Executed \`${command}\`: ${shortText(preview, 220)}` : `Executed \`${command}\`.`;
+    }
+    return `Executed \`${command}\` successfully.`;
   }
 
   if (intent.action === "status" || intent.action === "get_status") {
@@ -433,6 +485,7 @@ function explainPlan(intent: ParsedIntent | null, risk: string | null): string {
   if (!intent) return "No active plan yet. Send a request first.";
   const actionReason: Record<string, string> = {
     guide: "You asked for guided setup or next steps in a specific domain.",
+    run_cli: "You entered an explicit `social ...` command, so it is executed directly.",
     doctor: "You asked for health/setup validation.",
     status: "You asked for a quick account/system status snapshot.",
     config: "You asked to inspect current non-sensitive config.",
@@ -461,6 +514,7 @@ function formatConfidence(confidence: number | null | undefined): string {
 
 function shouldRequireIntentConfirmation(confidence: number | undefined, action: ParsedIntent["action"]): boolean {
   if (action === "unknown") return true;
+  if (action === "run_cli") return false;
   if (typeof confidence !== "number" || Number.isNaN(confidence)) return true;
   return confidence < AUTO_EXECUTE_CONFIDENCE_THRESHOLD;
 }
@@ -485,6 +539,10 @@ type HatchMemoryState = {
   unresolved: MemoryUnresolvedRecord[];
 };
 
+type PendingFlowState =
+  | { kind: "auth_login"; stage: "choose_api" }
+  | { kind: "auth_login"; stage: "await_token"; api: AuthApi };
+
 function HatchRuntime(): JSX.Element {
   const theme = useTheme();
   const { exit } = useApp();
@@ -508,6 +566,7 @@ function HatchRuntime(): JSX.Element {
     lastIntents: [],
     unresolved: []
   });
+  const [pendingFlow, setPendingFlow] = useState<PendingFlowState | null>(null);
 
   const [configState, setConfigState] = useState<LoadState<ConfigSnapshot | null>>({
     loading: true,
@@ -552,12 +611,22 @@ function HatchRuntime(): JSX.Element {
     const full = String(text || "");
     const turn = newTurn("assistant", "");
     setChatTurns((prev) => [...prev.slice(-79), turn]);
-    for (let i = 1; i <= full.length; i += 1) {
-      // Fast streaming simulation for agentic feel.
+    if (!full) return;
+
+    const disableStreaming = /^(1|true|yes|on)$/i.test(String(process.env.SOCIAL_TUI_DISABLE_STREAM || ""));
+    if (disableStreaming || full.length <= 8) {
+      setChatTurns((prev) => prev.map((x) => (x.id === turn.id ? { ...x, text: full } : x)));
+      return;
+    }
+
+    const delayMs = Math.max(0, Number.parseInt(process.env.SOCIAL_TUI_STREAM_DELAY_MS || "2", 10) || 2);
+    const step = full.length > 260 ? 9 : full.length > 160 ? 6 : full.length > 90 ? 4 : 2;
+    for (let i = step; i < full.length; i += step) {
       // eslint-disable-next-line no-await-in-loop
-      await sleep(6);
+      await sleep(delayMs);
       setChatTurns((prev) => prev.map((x) => (x.id === turn.id ? { ...x, text: full.slice(0, i) } : x)));
     }
+    setChatTurns((prev) => prev.map((x) => (x.id === turn.id ? { ...x, text: full } : x)));
   }, []);
 
   const streamPhase = useCallback(async (label: string, detail?: string) => {
@@ -766,9 +835,113 @@ function HatchRuntime(): JSX.Element {
     streamPhase
   ]);
 
+  const executeDirectRunCli = useCallback(async (input: {
+    command: string;
+    displayText?: string;
+    rememberAs?: string;
+  }): Promise<void> => {
+    const command = String(input.command || "").trim();
+    if (!command) return;
+    const displayText = String(input.displayText || maskCommandSecrets(command)).trim() || "social ...";
+    const intent: ParsedIntent = { action: "run_cli", params: { command } };
+    rememberIntent(input.rememberAs || displayText, "run_cli");
+    dispatch({
+      type: "PARSE_READY",
+      intent,
+      risk: "LOW",
+      missingSlots: [],
+      confidence: 1,
+      requiresConfirmation: false
+    });
+    dispatch({ type: "APPROVED", auto: true });
+    if (state.showDetails) {
+      await streamAssistantTurn(`tool_call: run_cli(command=${JSON.stringify(displayText)})`);
+    }
+    await runExecution(intent);
+  }, [rememberIntent, runExecution, state.showDetails, streamAssistantTurn]);
+
   const parseAndQueueIntent = useCallback(async (raw: string): Promise<void> => {
-    addTurn("user", raw);
-    const slash = handleSlashCommand(raw);
+    const input = String(raw || "").trim();
+    if (!input) return;
+
+    const rewrittenInput = rewriteStudioShorthand(input);
+    const isWabaSetupRequest = /^(waba|whatsapp)\s+setup$/i.test(rewrittenInput) || /^setup\s+(waba|whatsapp)$/i.test(rewrittenInput);
+    const authAssist = detectAuthAssist(rewrittenInput);
+
+    if (isWabaSetupRequest) {
+      addTurn("user", rewrittenInput);
+      setPendingFlow({ kind: "auth_login", stage: "await_token", api: "whatsapp" });
+      await streamAssistantTurn("Let's set up WhatsApp now. Paste your WhatsApp access token and I will hide it in chat logs. Type `cancel` to stop.");
+      return;
+    }
+
+    if (pendingFlow?.kind === "auth_login" && pendingFlow.stage === "choose_api") {
+      addTurn("user", rewrittenInput);
+      if (looksLikeCancelWord(rewrittenInput)) {
+        setPendingFlow(null);
+        await streamAssistantTurn("Auth setup canceled.");
+        return;
+      }
+      const chosenApi = parseAuthApiChoice(rewrittenInput);
+      if (!chosenApi) {
+        await streamAssistantTurn("Choose one: `facebook`, `instagram`, or `whatsapp` (or type `cancel`).");
+        return;
+      }
+      setPendingFlow({ kind: "auth_login", stage: "await_token", api: chosenApi });
+      await streamAssistantTurn(`Paste your ${chosenApi} access token now. I will hide it in chat logs. Type \`cancel\` to stop.`);
+      return;
+    }
+
+    if (pendingFlow?.kind === "auth_login" && pendingFlow.stage === "await_token") {
+      if (looksLikeCancelWord(rewrittenInput)) {
+        addTurn("user", rewrittenInput);
+        setPendingFlow(null);
+        await streamAssistantTurn("Auth setup canceled.");
+        return;
+      }
+      addTurn("user", `[${pendingFlow.api} token hidden]`);
+      const targetApi = pendingFlow.api;
+      setPendingFlow(null);
+      await streamAssistantTurn(`Got it. Verifying ${targetApi} token...`);
+      await executeDirectRunCli({
+        command: `social auth login -a ${targetApi} --token ${rewrittenInput} --no-open`,
+        displayText: `social auth login -a ${targetApi} --token *** --no-open`,
+        rememberAs: `auth login ${targetApi}`
+      });
+      return;
+    }
+
+    if (authAssist.kind === "auth_root") {
+      addTurn("user", rewrittenInput);
+      setPendingFlow({ kind: "auth_login", stage: "choose_api" });
+      await streamAssistantTurn("I can connect auth now. Which API do you want: `facebook`, `instagram`, or `whatsapp`?");
+      return;
+    }
+
+    if (authAssist.kind === "auth_login" && !authAssist.token) {
+      addTurn("user", rewrittenInput);
+      if (!authAssist.api) {
+        setPendingFlow({ kind: "auth_login", stage: "choose_api" });
+        await streamAssistantTurn("Which API should I connect for auth: `facebook`, `instagram`, or `whatsapp`?");
+        return;
+      }
+      setPendingFlow({ kind: "auth_login", stage: "await_token", api: authAssist.api });
+      await streamAssistantTurn(`Paste your ${authAssist.api} access token now. I will hide it in chat logs. Type \`cancel\` to stop.`);
+      return;
+    }
+
+    if (authAssist.kind === "auth_login" && authAssist.token) {
+      addTurn("user", maskCommandSecrets(rewrittenInput));
+      await executeDirectRunCli({
+        command: rewrittenInput,
+        displayText: maskCommandSecrets(rewrittenInput),
+        rememberAs: `auth login ${authAssist.api || "facebook"}`
+      });
+      return;
+    }
+
+    addTurn("user", rewrittenInput);
+    const slash = handleSlashCommand(rewrittenInput);
     if (slash.consumed) {
       if (slash.systemMessage) addTurn("system", slash.systemMessage);
       if (!slash.inputToExecute) return;
@@ -776,17 +949,17 @@ function HatchRuntime(): JSX.Element {
       return parseAndQueueIntent(slash.inputToExecute);
     }
 
-    if (raw === "__why__") {
+    if (rewrittenInput === "__why__") {
       await streamAssistantTurn(explainPlan(state.currentIntent, state.currentRisk));
       return;
     }
 
-    const providedName = extractProfileName(raw);
+    const providedName = extractProfileName(rewrittenInput);
     if (providedName) {
       setMemory((prev) => ({ ...prev, profileName: providedName }));
       const fallback = `Nice to meet you, ${providedName}. I'll remember your name in this workspace.`;
       const reply = await generateConversationalReply({
-        userText: raw,
+        userText: rewrittenInput,
         fallback,
         mode: "chat",
         intentAction: "memory_name_set",
@@ -798,11 +971,11 @@ function HatchRuntime(): JSX.Element {
       return;
     }
 
-    if (asksForRememberedName(raw)) {
+    if (asksForRememberedName(rewrittenInput)) {
       if (memory.profileName) {
         const fallback = `Your name is ${memory.profileName}.`;
         const reply = await generateConversationalReply({
-          userText: raw,
+          userText: rewrittenInput,
           fallback,
           mode: "chat",
           intentAction: "memory_name_get",
@@ -817,13 +990,13 @@ function HatchRuntime(): JSX.Element {
       return;
     }
 
-    if (looksLikeGreetingOnly(raw)) {
+    if (looksLikeGreetingOnly(rewrittenInput)) {
       const opener = memory.profileName ? `Hey ${memory.profileName}, I'm here.` : "Hey, I'm here.";
       const pending = memory.unresolved[0];
       const pendingHint = pending ? ` You still have one open item: "${shortText(pending.text, 72)}".` : "";
       const fallback = `${opener}${pendingHint} Want \`status\`, \`whoami\`, or \`social setup\`?`;
       const reply = await generateConversationalReply({
-        userText: raw,
+        userText: rewrittenInput,
         fallback,
         mode: "chat",
         intentAction: "greeting",
@@ -837,12 +1010,12 @@ function HatchRuntime(): JSX.Element {
 
     if (state.showDetails) await streamPhase("Reading request");
     if (state.showDetails) await streamPhase("Parsing intent");
-    const parsed = await parseNaturalLanguageWithOptionalAi(raw);
+    const parsed = await parseNaturalLanguageWithOptionalAi(rewrittenInput);
     const executor = getExecutor(parsed.intent.action);
     const parsedRisk = executor.risk;
     const intentConfidence = typeof parsed.confidence === "number" ? parsed.confidence : 0;
     const requiresConfirmation = shouldRequireIntentConfirmation(intentConfidence, parsed.intent.action);
-    const domainSkill = detectDomainSkill(raw, parsed.intent.action);
+    const domainSkill = detectDomainSkill(rewrittenInput, parsed.intent.action);
     if (state.showDetails) await streamPhase("Planning", parsed.intent.action);
     dispatch({
       type: "LOG_ADD",
@@ -855,10 +1028,10 @@ function HatchRuntime(): JSX.Element {
 
     if (parsed.intent.action === "unknown") {
       dispatch({ type: "LOG_ADD", entry: newLog("WARN", "Intent unresolved. Waiting for clearer instruction.") });
-      rememberUnresolved(raw, "intent_unresolved");
+      rememberUnresolved(rewrittenInput, "intent_unresolved");
       const fallback = `${domainSkill.purpose} Try: ${domainSkill.suggestions.map((x) => `\`${x}\``).join(" | ")}`;
       const reply = await generateConversationalReply({
-        userText: raw,
+        userText: rewrittenInput,
         fallback,
         mode: "chat",
         intentAction: parsed.intent.action,
@@ -880,7 +1053,7 @@ function HatchRuntime(): JSX.Element {
       await streamAssistantTurn(`Understood. I can ${describeAction(parsed.intent.action)}.`);
       await streamAssistantTurn(summarizeIntent(parsed.intent, parsedRisk, parsed.missingSlots));
     }
-    rememberIntent(raw, parsed.intent.action);
+    rememberIntent(rewrittenInput, parsed.intent.action);
     dispatch({
       type: "PARSE_READY",
       intent: parsed.intent,
@@ -894,10 +1067,10 @@ function HatchRuntime(): JSX.Element {
       dispatch({ type: "LOG_ADD", entry: newLog("WARN", parsed.errors.join("; ") || "Intent parsed with warnings.") });
     }
     if (parsed.missingSlots.length > 0) {
-      rememberUnresolved(raw, `missing_slots:${parsed.missingSlots.join(",")}`);
+      rememberUnresolved(rewrittenInput, `missing_slots:${parsed.missingSlots.join(",")}`);
       const fallback = `I need these fields: ${parsed.missingSlots.join(", ")}. Press e to edit slots.`;
       const reply = await generateConversationalReply({
-        userText: raw,
+        userText: rewrittenInput,
         fallback,
         mode: "chat",
         intentAction: parsed.intent.action,
@@ -918,7 +1091,7 @@ function HatchRuntime(): JSX.Element {
     if (parsedRisk === "LOW" && requiresConfirmation) {
       const fallback = `Intent confidence is ${formatConfidence(intentConfidence)}. Confirm with Enter/a, or rephrase to improve intent match.`;
       const reply = await generateConversationalReply({
-        userText: raw,
+        userText: rewrittenInput,
         fallback,
         mode: "chat",
         intentAction: parsed.intent.action,
@@ -934,7 +1107,7 @@ function HatchRuntime(): JSX.Element {
       ? "Awaiting approval. Press Enter or a to continue."
       : `Ready to run ${parsed.intent.action} (${parsedRisk.toLowerCase()} risk). Press Enter to confirm, or e to edit.`;
     const reply = await generateConversationalReply({
-      userText: raw,
+      userText: rewrittenInput,
       fallback,
       mode: "chat",
       intentAction: parsed.intent.action,
@@ -951,10 +1124,12 @@ function HatchRuntime(): JSX.Element {
     memory.unresolved,
     rememberIntent,
     rememberUnresolved,
+    pendingFlow,
     runExecution,
     state.currentIntent,
     state.currentRisk,
     state.showDetails,
+    executeDirectRunCli,
     streamAssistantTurn,
     streamPhase
   ]);
