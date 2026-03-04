@@ -4,3 +4,10 @@
 # Preserve native Windows line endings for command scripts.
 *.cmd text eol=crlf
 *.bat text eol=crlf
+
+# Exclude generated build artifacts from GitHub language stats.
+dist-runtime/** linguist-generated=true
+dist-social/** linguist-generated=true
+
+# Exclude static frontend prototype assets from language stats.
+docs/agentic-frontend/** linguist-generated=true
