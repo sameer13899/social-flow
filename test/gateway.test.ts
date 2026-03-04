@@ -179,7 +179,7 @@ module.exports = [
         assert.equal(root.status, 410);
         assert.equal(String(root.headers['content-type'] || '').includes('application/json'), true);
         assert.equal(
-          String(root.raw || '').includes('Open /studio/app for bundled Studio UI'),
+          String(root.raw || '').includes('/studio/app for bundled Studio UI'),
           true
         );
 
@@ -197,7 +197,7 @@ module.exports = [
     }
   },
   {
-    name: 'gateway studio route serves contextual landing page',
+    name: 'gateway studio route redirects to bundled studio app',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
@@ -209,10 +209,8 @@ module.exports = [
           method: 'GET',
           pathName: '/studio'
         });
-        assert.equal(studio.status, 200);
-        assert.equal(String(studio.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(studio.raw || '').includes('Social Flow Studio'), true);
-        assert.equal(String(studio.raw || '').includes('/api/health'), true);
+        assert.equal(studio.status, 302);
+        assert.equal(String(studio.headers.location || ''), '/studio/app');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
@@ -220,7 +218,7 @@ module.exports = [
     }
   },
   {
-    name: 'gateway studio context alias serves contextual landing page',
+    name: 'gateway studio context alias redirects to bundled studio app',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
@@ -232,9 +230,8 @@ module.exports = [
           method: 'GET',
           pathName: '/studio/context'
         });
-        assert.equal(studio.status, 200);
-        assert.equal(String(studio.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(studio.raw || '').includes('Context Landing'), true);
+        assert.equal(studio.status, 302);
+        assert.equal(String(studio.headers.location || ''), '/studio/app');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
@@ -245,7 +242,11 @@ module.exports = [
     name: 'gateway bundled studio app route serves static frontend',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
+      const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
+      const oldDisableBundled = process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      process.env.SOCIAL_STUDIO_ASSET_DIRS = path.resolve(process.cwd(), 'docs', 'agentic-frontend');
+      process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = '1';
       const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
       try {
         await server.start();
@@ -256,11 +257,14 @@ module.exports = [
         });
         assert.equal(app.status, 200);
         assert.equal(String(app.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(app.raw || '').includes('<div id="root"></div>'), true);
-        assert.equal(String(app.raw || '').includes('/assets/'), true);
+        assert.equal(String(app.raw || '').includes('Social Flow Agentic Frontend Screens'), true);
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
+        if (oldStudioDirs === undefined) delete process.env.SOCIAL_STUDIO_ASSET_DIRS;
+        else process.env.SOCIAL_STUDIO_ASSET_DIRS = oldStudioDirs;
+        if (oldDisableBundled === undefined) delete process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
+        else process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = oldDisableBundled;
       }
     }
   },
@@ -268,12 +272,19 @@ module.exports = [
     name: 'gateway bundled studio app route works when cwd is outside repo root',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
+      const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
+      const oldDisableBundled = process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
       const oldCwd = process.cwd();
       const externalCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-cwd-'));
+      const externalStudioDir = path.join(externalCwd, 'studio-assets');
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      fs.mkdirSync(externalStudioDir, { recursive: true });
+      fs.writeFileSync(path.join(externalStudioDir, 'index.html'), '<!doctype html><html><body>external studio app</body></html>', 'utf8');
       const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
       try {
         process.chdir(externalCwd);
+        process.env.SOCIAL_STUDIO_ASSET_DIRS = externalStudioDir;
+        process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = '1';
         await server.start();
         const app = await requestRaw({
           port: server.port,
@@ -282,12 +293,42 @@ module.exports = [
         });
         assert.equal(app.status, 200);
         assert.equal(String(app.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(app.raw || '').includes('<div id="root"></div>'), true);
+        assert.equal(String(app.raw || '').includes('external studio app'), true);
       } finally {
         await server.stop();
         process.chdir(oldCwd);
         fs.rmSync(externalCwd, { recursive: true, force: true });
         process.env.META_CLI_HOME = oldHome;
+        if (oldStudioDirs === undefined) delete process.env.SOCIAL_STUDIO_ASSET_DIRS;
+        else process.env.SOCIAL_STUDIO_ASSET_DIRS = oldStudioDirs;
+        if (oldDisableBundled === undefined) delete process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
+        else process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = oldDisableBundled;
+      }
+    }
+  },
+  {
+    name: 'gateway studio app route returns missing-frontend error when bundled assets are disabled',
+    fn: async () => {
+      const oldHome = process.env.META_CLI_HOME;
+      const oldDisableBundled = process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
+      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = '1';
+      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
+      try {
+        await server.start();
+        const app = await requestRaw({
+          port: server.port,
+          method: 'GET',
+          pathName: '/studio/app'
+        });
+        assert.equal(app.status, 404);
+        assert.equal(String(app.headers['content-type'] || '').includes('application/json'), true);
+        assert.equal(String(app.raw || '').includes('Bundled Studio frontend is not installed'), true);
+      } finally {
+        await server.stop();
+        process.env.META_CLI_HOME = oldHome;
+        if (oldDisableBundled === undefined) delete process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
+        else process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = oldDisableBundled;
       }
     }
   },
@@ -306,9 +347,8 @@ module.exports = [
           method: 'GET',
           pathName: '/studio'
         });
-        assert.equal(studio.status, 200);
-        assert.equal(String(studio.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(studio.raw || '').includes('Context Landing'), true);
+        assert.equal(studio.status, 302);
+        assert.equal(String(studio.headers.location || ''), '/studio/app');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;

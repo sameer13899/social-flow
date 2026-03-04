@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
+const packageJson = require('../package.json');
 const chalk = require('chalk');
 const { openUrl } = require('../lib/open-url');
 const { startGatewayBackground } = require('../lib/gateway/manager');
@@ -365,10 +366,36 @@ function registerStudioCommand(program) {
 
       let health = await requestJson(healthUrl);
       let autoStarted = false;
+      let replacedExternal = false;
+      let staleReplaceFailed = false;
 
-      if ((!health || !health.data || !health.data.ok) && opts.autoStart !== false) {
-        const started = await startGatewayBackground({ host, port });
+      const localVersion = String(packageJson?.version || '').trim();
+      const remoteService = String(health?.data?.service || '').trim().toLowerCase();
+      const remoteVersion = String(health?.data?.version || '').trim();
+      const versionMismatch = Boolean(
+        health?.status === 200 &&
+        health?.data?.ok &&
+        remoteService === 'social-api-gateway' &&
+        localVersion &&
+        remoteVersion &&
+        localVersion !== remoteVersion
+      );
+
+      if (((!health || !health.data || !health.data.ok) || versionMismatch) && opts.autoStart !== false) {
+        const started = await startGatewayBackground({
+          host,
+          port,
+          replaceOnVersionMismatch: true
+        });
         autoStarted = Boolean(started.started);
+        replacedExternal = Boolean(started.replacedExternal);
+        const replaceReason = String(started?.replaceDecision?.reason || '').trim();
+        staleReplaceFailed = Boolean(
+          started.external &&
+          started.replaceDecision &&
+          (replaceReason === 'version_mismatch' || replaceReason === 'studio_route_unavailable') &&
+          !started.replacedExternal
+        );
         health = started.health && started.health.ok
           ? { status: 200, data: started.health.data || { ok: true } }
           : await requestJson(healthUrl);
@@ -382,7 +409,7 @@ function registerStudioCommand(program) {
         gatewayApiKey
       });
       const frontendUrl = frontend.ok ? String(frontend.url || '').trim() : '';
-      const openTarget = frontendUrl || studioAppUrl;
+      const openTarget = frontendUrl || studioContextUrl;
 
       const rows = [];
       if (health.status === 200 && health.data && health.data.ok) {
@@ -390,8 +417,18 @@ function registerStudioCommand(program) {
         rows.push(chalk.gray(`Health endpoint: ${healthUrl}`));
         rows.push(chalk.gray(`Status page: ${statusUrl}`));
         rows.push(chalk.gray(`Studio bundled app: ${studioAppUrl}`));
-        rows.push(chalk.gray(`Studio context page: ${studioContextUrl}`));
+        rows.push(chalk.gray(`Studio home page: ${studioContextUrl}`));
         if (frontendUrl) rows.push(chalk.gray(`Studio frontend: ${frontendUrl}`));
+        if (replacedExternal && versionMismatch) {
+          rows.push(chalk.yellow(`Replaced stale gateway version ${remoteVersion} with ${localVersion}.`));
+        } else if (replacedExternal) {
+          rows.push(chalk.yellow('Replaced stale gateway process because Studio route was unavailable.'));
+        } else if (staleReplaceFailed) {
+          rows.push(chalk.yellow('Detected stale gateway process, but auto-replace could not complete in this terminal.'));
+          rows.push(chalk.gray(`Stop the process on port ${port}, then rerun social studio.`));
+        } else if (versionMismatch && opts.autoStart === false) {
+          rows.push(chalk.yellow(`Gateway version mismatch (${remoteVersion} vs local ${localVersion}). Re-run without --no-auto-start to auto-replace.`));
+        }
         if (autoStarted) rows.push(chalk.green('Gateway auto-started for Studio flow.'));
       } else {
         rows.push(chalk.red(`Gateway not reachable at ${baseUrl.toString().replace(/\/$/, '')}`));
@@ -402,7 +439,7 @@ function registerStudioCommand(program) {
       if (!frontend.ok) {
         rows.push(chalk.yellow(`Frontend wiring warning: ${frontend.reason}`));
       } else if (frontend.mode === 'none') {
-        rows.push(chalk.gray('Frontend not specified. Opening bundled Studio app route.'));
+        rows.push(chalk.gray('Frontend not specified. Opening Studio home page.'));
       } else if (frontend.started) {
         rows.push(chalk.green(`Frontend started (${frontend.mode}) on port ${frontendPort}.`));
         if (frontend.logFile) rows.push(chalk.gray(`Frontend log: ${frontend.logFile}`));

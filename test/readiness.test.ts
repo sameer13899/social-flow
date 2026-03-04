@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { buildReadinessReport } = require('../lib/readiness');
-const { tailLines } = require('../lib/gateway/manager');
+const gatewayManager = require('../lib/gateway/manager');
+const { tailLines } = gatewayManager;
 
 function mockConfig(input = {}) {
   const tokens = input.tokens || {};
@@ -52,6 +53,76 @@ module.exports = [
       const text = ['one', 'two', 'three', 'four'].join('\n');
       assert.equal(tailLines(text, 2), 'three\nfour');
       assert.equal(tailLines(text, 1), 'four');
+    }
+  },
+  {
+    name: 'gateway manager replaces stale social gateway when version differs',
+    fn: () => {
+      const decision = gatewayManager._private.shouldReplaceExternalGateway(
+        {
+          ok: true,
+          data: {
+            service: 'social-api-gateway',
+            version: '0.0.0-old'
+          }
+        },
+        { replaceOnVersionMismatch: true }
+      );
+      assert.equal(decision.replace, true);
+      assert.equal(decision.reason, 'version_mismatch');
+    }
+  },
+  {
+    name: 'gateway manager does not replace same-version social gateway by default',
+    fn: () => {
+      const currentVersion = String(require('../package.json').version || '');
+      const decision = gatewayManager._private.shouldReplaceExternalGateway(
+        {
+          ok: true,
+          data: {
+            service: 'social-api-gateway',
+            version: currentVersion
+          }
+        },
+        { replaceOnVersionMismatch: true }
+      );
+      assert.equal(decision.replace, false);
+      assert.equal(decision.reason, 'same_version');
+    }
+  },
+  {
+    name: 'gateway manager replaces social gateway when studio route is unavailable',
+    fn: () => {
+      const currentVersion = String(require('../package.json').version || '');
+      const decision = gatewayManager._private.shouldReplaceExternalGateway(
+        {
+          ok: true,
+          data: {
+            service: 'social-api-gateway',
+            version: currentVersion
+          }
+        },
+        { studioRouteOk: false, requireStudioRoute: true }
+      );
+      assert.equal(decision.replace, true);
+      assert.equal(decision.reason, 'studio_route_unavailable');
+    }
+  },
+  {
+    name: 'gateway manager does not replace non-social service on same port',
+    fn: () => {
+      const decision = gatewayManager._private.shouldReplaceExternalGateway(
+        {
+          ok: true,
+          data: {
+            service: 'other-service',
+            version: '1.2.3'
+          }
+        },
+        { replaceOnVersionMismatch: true }
+      );
+      assert.equal(decision.replace, false);
+      assert.equal(decision.reason, 'not_social_gateway');
     }
   }
 ];

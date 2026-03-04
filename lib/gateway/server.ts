@@ -50,6 +50,13 @@ function mimeFor(filePath) {
 }
 
 function bundledStudioAssetRoot() {
+  const forceBundled = String(process.env.SOCIAL_STUDIO_FORCE_BUNDLED || '').trim().toLowerCase();
+  if (forceBundled === '1' || forceBundled === 'true') {
+    const forcedCandidate = path.resolve(__dirname, '..', '..', 'assets', 'studio');
+    if (fs.existsSync(forcedCandidate) && fs.statSync(forcedCandidate).isDirectory()) return forcedCandidate;
+  }
+  const disableBundled = String(process.env.SOCIAL_STUDIO_DISABLE_BUNDLED || '').trim();
+  if (disableBundled === '1' || disableBundled.toLowerCase() === 'true') return '';
   const candidate = path.resolve(__dirname, '..', '..', 'assets', 'studio');
   if (!fs.existsSync(candidate)) return '';
   if (!fs.statSync(candidate).isDirectory()) return '';
@@ -118,358 +125,6 @@ function resolveStudioAsset(routePath) {
   return '';
 }
 
-function escapeHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function safeInlineJson(value) {
-  return JSON.stringify(value).replace(/</g, '\\u003c');
-}
-
-function renderStudioLandingHtml({
-  workspace,
-  gatewayUrl,
-  apiKeyConfigured,
-  requireApiKey,
-  externalStudioUrl,
-  staticAssetRoots
-}) {
-  const ws = String(workspace || 'default').trim() || 'default';
-  const url = String(gatewayUrl || '').trim();
-  const extStudio = String(externalStudioUrl || '').trim();
-  const roots = Array.isArray(staticAssetRoots) ? staticAssetRoots : [];
-  const model = {
-    workspace: ws,
-    gatewayUrl: url,
-    apiKeyConfigured: Boolean(apiKeyConfigured),
-    requireApiKey: Boolean(requireApiKey),
-    externalStudioUrl: extStudio,
-    staticAssetRoots: roots
-  };
-  const nowIso = new Date().toISOString();
-  const maybeExternalCta = extStudio
-    ? `<a class="btn primary" href="${escapeHtml(extStudio)}" target="_blank" rel="noreferrer">Open External Studio</a>`
-    : `<button class="btn primary" type="button" id="copy-studio-cmd">Copy Local Studio Command</button>`;
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Social Flow Studio Landing</title>
-  <style>
-    :root {
-      --bg: #0c1118;
-      --bg-soft: #141c27;
-      --card: #101823;
-      --line: #273243;
-      --text: #e8eef7;
-      --muted: #97a7bd;
-      --mint: #5ef2c4;
-      --amber: #f4c668;
-      --red: #ff6c6c;
-      --mono: "IBM Plex Mono", "Consolas", "Courier New", monospace;
-      --sans: "Outfit", "Segoe UI", "Inter", sans-serif;
-      --radius: 14px;
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; min-height: 100%; background: radial-gradient(circle at 15% 0%, #1a2740 0%, var(--bg) 46%), var(--bg); color: var(--text); font-family: var(--sans); }
-    .shell { max-width: 1080px; margin: 0 auto; padding: 28px 20px 44px; }
-    .hero { display: grid; gap: 14px; }
-    .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
-    .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--amber); box-shadow: 0 0 0 4px rgba(244, 198, 104, 0.15); }
-    h1 { margin: 0; font-size: clamp(26px, 4vw, 42px); line-height: 1.08; }
-    .lead { margin: 0; color: var(--muted); max-width: 70ch; }
-    .grid { margin-top: 20px; display: grid; gap: 14px; grid-template-columns: repeat(12, minmax(0, 1fr)); }
-    .card { background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent), var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
-    .card h2 { margin: 0 0 10px; font-size: 18px; }
-    .card p { margin: 0; color: var(--muted); }
-    .span-7 { grid-column: span 7; }
-    .span-5 { grid-column: span 5; }
-    .span-12 { grid-column: span 12; }
-    .pill-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
-    .pill { border: 1px solid var(--line); color: var(--muted); background: var(--bg-soft); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
-    .pill.ok { color: #03251c; background: var(--mint); border-color: transparent; }
-    .pill.warn { color: #3d2903; background: var(--amber); border-color: transparent; }
-    .pill.err { color: #30070a; background: var(--red); border-color: transparent; }
-    .btn-row { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; }
-    .btn { border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--text); padding: 9px 12px; cursor: pointer; text-decoration: none; font-weight: 600; font-size: 13px; }
-    .btn:hover { border-color: #39506d; }
-    .btn.primary { background: var(--mint); color: #02241b; border-color: transparent; }
-    .mono { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; background: #0a1119; padding: 10px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; color: #d4deeb; }
-    .kv { margin-top: 12px; display: grid; gap: 8px; }
-    .kv-item { display: grid; grid-template-columns: 130px 1fr; gap: 8px; align-items: center; }
-    .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; }
-    .v { font-family: var(--mono); font-size: 12px; color: #d4deeb; }
-    .list { margin: 10px 0 0; padding-left: 20px; color: #d4deeb; }
-    .list li { margin-bottom: 6px; }
-    .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-    .mini-h { margin: 0; font-size: 15px; }
-    .chip-grid { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
-    .chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: #d4deeb; background: #0a1119; }
-    .footer { margin-top: 16px; color: var(--muted); font-size: 12px; }
-    .key-row { margin-top: 10px; display: flex; gap: 8px; }
-    .key-row input { flex: 1; background: #0a1119; color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; font-family: var(--mono); }
-    @media (max-width: 920px) { .span-7, .span-5, .span-12 { grid-column: span 12; } .split { grid-template-columns: 1fr; } }
-  </style>
-</head>
-<body>
-  <div class="shell">
-    <section class="hero">
-      <p class="eyebrow"><span class="dot" id="live-dot"></span>Social Flow Studio</p>
-      <h1>Context Landing</h1>
-      <p class="lead">Use this page as the control handoff between gateway runtime and Studio UI. It checks health, highlights auth mode, and gives direct launch paths.</p>
-      <div class="pill-row">
-        <span class="pill" id="health-pill">Gateway: checking</span>
-        <span class="pill" id="auth-pill">Auth: checking</span>
-        <span class="pill" id="workspace-pill">Workspace: ${escapeHtml(ws)}</span>
-      </div>
-    </section>
-
-    <section class="grid">
-      <article class="card span-7">
-        <h2>Launch Paths</h2>
-        <p>Pick one route. External UI is best for teams. Local UI is best for development and fast iteration.</p>
-        <div class="btn-row">
-          <a class="btn" href="/studio/app">Open Bundled Studio App</a>
-          ${maybeExternalCta}
-          <a class="btn" href="/api/status?doctor=1" target="_blank" rel="noreferrer">Open Status JSON</a>
-          <a class="btn" href="/api/health" target="_blank" rel="noreferrer">Open Health JSON</a>
-        </div>
-        <div class="mono" id="studio-command">social studio --url ${escapeHtml(url)}</div>
-        <div class="key-row">
-          <input id="gateway-key-input" type="password" placeholder="Optional x-gateway-key for protected endpoints" />
-          <button class="btn" type="button" id="save-key-btn">Save Key</button>
-          <button class="btn" type="button" id="clear-key-btn">Clear</button>
-        </div>
-      </article>
-
-      <article class="card span-5">
-        <h2>Runtime Context</h2>
-        <div class="kv">
-          <div class="kv-item"><div class="k">Gateway URL</div><div class="v" id="gateway-url">${escapeHtml(url)}</div></div>
-          <div class="kv-item"><div class="k">API Key Configured</div><div class="v" id="api-key-configured">checking...</div></div>
-          <div class="kv-item"><div class="k">Require API Key</div><div class="v" id="require-api-key">checking...</div></div>
-          <div class="kv-item"><div class="k">Asset Roots</div><div class="v" id="asset-roots">checking...</div></div>
-        </div>
-      </article>
-
-      <article class="card span-12">
-        <h2>Operational Snapshot</h2>
-        <p id="ops-caption">Fetching live operational snapshot...</p>
-        <ul class="list" id="ops-list">
-          <li>Checking health and status...</li>
-        </ul>
-      </article>
-
-      <article class="card span-12">
-        <h2>Built-In Skills And Verticals</h2>
-        <p>These are present in this repo today and should be surfaced in Studio flows.</p>
-        <div class="split">
-          <div>
-            <h3 class="mini-h">Domain Skills (5)</h3>
-            <div class="chip-grid">
-              <span class="chip">setup-auth</span>
-              <span class="chip">facebook</span>
-              <span class="chip">instagram</span>
-              <span class="chip">waba</span>
-              <span class="chip">marketing</span>
-            </div>
-            <ul class="list">
-              <li>Referenced from skills/README.md</li>
-              <li>Auto-routed by Hatch intent flow</li>
-            </ul>
-          </div>
-          <div>
-            <h3 class="mini-h">Industry Verticals (6)</h3>
-            <div class="chip-grid">
-              <span class="chip">real_estate_india</span>
-              <span class="chip">real_estate_uae</span>
-              <span class="chip">ecommerce</span>
-              <span class="chip">edtech</span>
-              <span class="chip">healthcare</span>
-              <span class="chip">local_services</span>
-            </div>
-            <ul class="list">
-              <li>Real-estate is split by market: India and UAE.</li>
-              <li>Commands: <code>social industry show</code>, <code>social industry detect --yes</code>, <code>social industry set real_estate_india</code>, <code>social industry set real_estate_uae</code></li>
-            </ul>
-          </div>
-        </div>
-      </article>
-    </section>
-
-    <p class="footer">Generated: ${escapeHtml(nowIso)} | Routes: /studio (context) /studio/app (bundled) | APIs: /api/health /api/status /api/ops/summary</p>
-  </div>
-
-  <script>
-    const model = ${safeInlineJson(model)};
-    const STORAGE_KEY = "social_flow_studio_gateway_key_v1";
-
-    const ui = {
-      dot: document.getElementById("live-dot"),
-      healthPill: document.getElementById("health-pill"),
-      authPill: document.getElementById("auth-pill"),
-      workspacePill: document.getElementById("workspace-pill"),
-      studioCommand: document.getElementById("studio-command"),
-      gatewayKeyInput: document.getElementById("gateway-key-input"),
-      saveKeyBtn: document.getElementById("save-key-btn"),
-      clearKeyBtn: document.getElementById("clear-key-btn"),
-      apiKeyConfigured: document.getElementById("api-key-configured"),
-      requireApiKey: document.getElementById("require-api-key"),
-      assetRoots: document.getElementById("asset-roots"),
-      opsCaption: document.getElementById("ops-caption"),
-      opsList: document.getElementById("ops-list"),
-      copyStudioCmd: document.getElementById("copy-studio-cmd")
-    };
-
-    let runtimeKey = "";
-
-    function setPill(el, cls, text) {
-      if (!el) return;
-      el.classList.remove("ok", "warn", "err");
-      if (cls) el.classList.add(cls);
-      el.textContent = text;
-    }
-
-    function endpoint(path) {
-      return new URL(path, window.location.origin).toString();
-    }
-
-    function readStoredKey() {
-      try { return String(localStorage.getItem(STORAGE_KEY) || ""); }
-      catch { return ""; }
-    }
-
-    function writeStoredKey(value) {
-      try {
-        if (!value) localStorage.removeItem(STORAGE_KEY);
-        else localStorage.setItem(STORAGE_KEY, value);
-      } catch {
-        // ignore strict mode/storage failures
-      }
-    }
-
-    async function requestJson(path) {
-      const headers = {};
-      if (runtimeKey) headers["x-gateway-key"] = runtimeKey;
-      const res = await fetch(endpoint(path), { headers });
-      const raw = await res.text();
-      let data = {};
-      try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
-      if (!res.ok) {
-        const err = new Error(String(data.error || data.message || ("HTTP " + res.status)));
-        err.status = res.status;
-        err.data = data;
-        throw err;
-      }
-      return data;
-    }
-
-    function renderOps(summary) {
-      const s = summary && summary.summary ? summary.summary : {};
-      const items = [
-        "Open alerts: " + String(s.alertsOpen ?? "--"),
-        "Pending approvals: " + String(s.approvalsPending ?? "--"),
-        "Sources ready/configured: " + String(s.sourcesReady ?? "--") + "/" + String(s.sourcesConfigured ?? "--"),
-        "Guard mode: " + String((s.guardPolicy && s.guardPolicy.mode) || "--")
-      ];
-      ui.opsList.innerHTML = "";
-      items.forEach((text) => {
-        const li = document.createElement("li");
-        li.textContent = text;
-        ui.opsList.appendChild(li);
-      });
-    }
-
-    async function refresh() {
-      setPill(ui.healthPill, "warn", "Gateway: checking");
-      ui.dot.style.background = "var(--amber)";
-      ui.opsCaption.textContent = "Refreshing runtime context...";
-      ui.apiKeyConfigured.textContent = model.apiKeyConfigured ? "yes" : "no";
-      ui.requireApiKey.textContent = model.requireApiKey ? "yes" : "no";
-      ui.assetRoots.textContent = model.staticAssetRoots.length ? model.staticAssetRoots.join(", ") : "none";
-
-      try {
-        const health = await requestJson("/api/health");
-        const version = String(health.version || "unknown");
-        setPill(ui.healthPill, "ok", "Gateway: healthy (" + version + ")");
-        ui.dot.style.background = "var(--mint)";
-      } catch (error) {
-        setPill(ui.healthPill, "err", "Gateway: " + String(error.message || "offline"));
-        ui.opsCaption.textContent = "Gateway is not healthy. Start with: social start";
-        ui.opsList.innerHTML = "<li>Run <code>social start</code> and refresh this page.</li>";
-        return;
-      }
-
-      try {
-        const status = await requestJson("/api/status");
-        const workspace = String(status.workspace || model.workspace || "default");
-        ui.workspacePill.textContent = "Workspace: " + workspace;
-        setPill(ui.authPill, "ok", model.requireApiKey ? "Auth: key accepted" : "Auth: local relaxed");
-        ui.studioCommand.textContent = "social studio --url " + window.location.origin;
-
-        const ops = await requestJson("/api/ops/summary?workspace=" + encodeURIComponent(workspace));
-        ui.opsCaption.textContent = "Live snapshot from /api/ops/summary";
-        renderOps(ops);
-      } catch (error) {
-        const statusCode = Number(error.status || 0);
-        if (statusCode === 401 || statusCode === 503) {
-          setPill(ui.authPill, "warn", "Auth: gateway key required");
-          ui.opsCaption.textContent = "Provide x-gateway-key above to read protected routes.";
-          ui.opsList.innerHTML = "<li>Save gateway key and click refresh (or reload page).</li>";
-          return;
-        }
-        setPill(ui.authPill, "warn", "Auth: partial");
-        ui.opsCaption.textContent = "Status available, but some protected routes failed.";
-        ui.opsList.innerHTML = "<li>" + String(error.message || "Unknown error") + "</li>";
-      }
-    }
-
-    function bind() {
-      runtimeKey = readStoredKey();
-      ui.gatewayKeyInput.value = runtimeKey;
-
-      ui.saveKeyBtn.addEventListener("click", () => {
-        runtimeKey = String(ui.gatewayKeyInput.value || "").trim();
-        writeStoredKey(runtimeKey);
-        refresh();
-      });
-
-      ui.clearKeyBtn.addEventListener("click", () => {
-        runtimeKey = "";
-        ui.gatewayKeyInput.value = "";
-        writeStoredKey("");
-        refresh();
-      });
-
-      if (ui.copyStudioCmd) {
-        ui.copyStudioCmd.addEventListener("click", async () => {
-          const command = "social studio --url " + window.location.origin + " --frontend-path C:\\\\path\\\\to\\\\social-flow-ui";
-          try {
-            await navigator.clipboard.writeText(command);
-            ui.copyStudioCmd.textContent = "Copied";
-            setTimeout(() => { ui.copyStudioCmd.textContent = "Copy Local Studio Command"; }, 1500);
-          } catch {
-            ui.copyStudioCmd.textContent = "Copy failed";
-          }
-        });
-      }
-    }
-
-    bind();
-    refresh();
-    setInterval(refresh, 10000);
-  </script>
-</body>
-</html>`;
-}
-
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -488,6 +143,13 @@ function sendFile(res, status, filePath, headers = {}) {
     ...(headers || {})
   });
   res.end(body);
+}
+
+function studioUiMissingPayload() {
+  return {
+    ok: false,
+    error: 'Bundled Studio frontend is not installed. Add a build to assets/studio or set SOCIAL_STUDIO_ASSET_DIR(S), then open /studio/app.'
+  };
 }
 
 function sdkTraceId() {
@@ -3473,20 +3135,19 @@ class GatewayServer {
 
   async handleStatic(req, res, parsedUrl) {
     const route = parsedUrl.pathname || '/';
-    if (route === '/studio' || route === '/studio/' || route === '/studio/context' || route === '/studio/context/') {
-      const workspace = config.getActiveProfile() || 'default';
-      const html = renderStudioLandingHtml({
-        workspace,
-        gatewayUrl: this.url(),
-        apiKeyConfigured: Boolean(this.apiKey),
-        requireApiKey: Boolean(this.requireApiKey),
-        externalStudioUrl: process.env.SOCIAL_STUDIO_URL || '',
-        staticAssetRoots: studioAssetRoots()
-      });
-      sendText(res, 200, html, {
-        'Content-Type': 'text/html; charset=utf-8',
+    const isStudioHomeRoute = route === '/studio'
+      || route === '/studio/'
+      || route === '/studio/context'
+      || route === '/studio/context/';
+    const isStudioAppRoute = route === '/studio/app'
+      || route === '/studio/app/'
+      || route.startsWith('/studio/app/');
+    if (isStudioHomeRoute) {
+      res.writeHead(302, {
+        Location: '/studio/app',
         'Cache-Control': 'no-store'
       });
+      res.end();
       return;
     }
 
@@ -3500,7 +3161,7 @@ class GatewayServer {
     if (route === '/' || route === '/index.html') {
       sendJson(res, 410, {
         ok: false,
-        error: 'Root route is disabled. Open /studio/app for bundled Studio UI or /studio for contextual launch guidance.'
+        error: 'Root route is disabled. Open /studio/app for bundled Studio UI or /api/status?doctor=1 for diagnostics.'
       });
       return;
     }
@@ -3511,6 +3172,10 @@ class GatewayServer {
       sendFile(res, 200, staticFile, {
         'Cache-Control': isHtml ? 'no-store' : 'public, max-age=300'
       });
+      return;
+    }
+    if (isStudioAppRoute) {
+      sendJson(res, 404, studioUiMissingPayload());
       return;
     }
     sendJson(res, 404, {

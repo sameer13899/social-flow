@@ -148,6 +148,24 @@ module.exports = [
     }
   },
   {
+    name: 'chat agent handles auth login intent without LLM planning',
+    fn: async () => {
+      const ctx = new ConversationContext();
+      const agent = new AutonomousAgent({
+        context: ctx,
+        config: { getDefaultApi: () => 'facebook' },
+        options: {}
+      });
+      agent.tryLlmDecision = async () => {
+        throw new Error('LLM should not be called for auth login heuristic');
+      };
+      const res = await agent.process('auth login for instagram');
+      assert.equal(res.actions.length, 0);
+      assert.equal(res.needsInput, true);
+      assert.equal(res.message.toLowerCase().includes('social auth login -a instagram'), true);
+    }
+  },
+  {
     name: 'chat agent maps "do I have a Facebook page" to query.pages',
     fn: async () => {
       const ctx = new ConversationContext();

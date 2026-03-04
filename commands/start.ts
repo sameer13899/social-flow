@@ -11,7 +11,11 @@ function runForeground(args) {
     const binPath = path.join(__dirname, '..', 'bin', 'social.js');
     const child = spawn(process.execPath, [binPath, '--no-banner', 'gateway', ...args], {
       stdio: 'inherit',
-      env: process.env
+      env: {
+        ...process.env,
+        SOCIAL_STUDIO_FORCE_BUNDLED: '1',
+        SOCIAL_STUDIO_DISABLE_BUNDLED: '0'
+      }
     });
     child.on('error', reject);
     child.on('close', (code) => {
@@ -50,6 +54,7 @@ function registerStartCommand(program) {
     .option('--cors-origins <csv>', 'Comma-separated allowed CORS origins')
     .option('--rate-limit-max <n>', 'Max API requests per window', '180')
     .option('--rate-limit-window-ms <ms>', 'Rate limit window in milliseconds', '60000')
+    .option('--no-replace', 'Do not replace an older Social Flow gateway already bound to the target port')
     .option('--foreground', 'Run in current terminal (Ctrl+C to stop)', false)
     .option('--force', 'Bypass readiness blockers', false)
     .option('--open', 'Open gateway status page in browser after launch', false)
@@ -83,13 +88,43 @@ function registerStartCommand(program) {
         requireApiKey: Boolean(opts.requireApiKey),
         corsOrigins: opts.corsOrigins,
         rateLimitMax: opts.rateLimitMax,
-        rateLimitWindowMs: opts.rateLimitWindowMs
+        rateLimitWindowMs: opts.rateLimitWindowMs,
+        replace: Boolean(opts.force),
+        replaceExternal: Boolean(opts.force),
+        replaceOnVersionMismatch: opts.replace !== false
       });
 
       const url = `http://${started.status.host}:${started.status.port}`;
       if (started.started) console.log(chalk.green(`Gateway started in background: ${url}`));
       else if (started.external) console.log(chalk.green(`Gateway already running (unmanaged process): ${url}`));
       else console.log(chalk.green(`Gateway already running: ${url}`));
+
+      if (started.replacedExternal && started.replaceDecision && started.replaceDecision.reason === 'version_mismatch') {
+        const from = started.replaceDecision.existingVersion || 'unknown';
+        const to = started.replaceDecision.currentVersion || 'current';
+        console.log(chalk.yellow(`Replaced stale Social Flow gateway on port ${started.status.port} (version ${from} -> ${to}).`));
+      } else if (started.replacedExternal && started.replaceDecision && started.replaceDecision.reason === 'studio_route_unavailable') {
+        const from = started.replaceDecision.existingVersion || 'unknown';
+        console.log(chalk.yellow(`Replaced stale Social Flow gateway on port ${started.status.port} (Studio route unavailable on version ${from}).`));
+      } else if (
+        started.external &&
+        started.replaceDecision &&
+        started.replaceDecision.reason === 'version_mismatch'
+      ) {
+        const from = started.replaceDecision.existingVersion || 'unknown';
+        const to = started.replaceDecision.currentVersion || 'current';
+        console.log(chalk.yellow(`Detected stale Social Flow gateway version ${from} on port ${started.status.port}.`));
+        console.log(chalk.yellow(`Auto-replace could not complete in this terminal. Stop the process on port ${started.status.port}, then rerun \`social start\`.`));
+        console.log(chalk.gray(`Expected version: ${to}`));
+      } else if (
+        started.external &&
+        started.replaceDecision &&
+        started.replaceDecision.reason === 'studio_route_unavailable'
+      ) {
+        const from = started.replaceDecision.existingVersion || 'unknown';
+        console.log(chalk.yellow(`Detected stale Social Flow gateway on port ${started.status.port} (Studio route unavailable on version ${from}).`));
+        console.log(chalk.yellow(`Auto-replace could not complete in this terminal. Stop the process on port ${started.status.port}, then rerun \`social start\`.`));
+      }
 
       if (started.health && started.health.ok) {
         console.log(chalk.gray(`Health: ${url}/api/health (ok)`));

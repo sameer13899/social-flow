@@ -526,6 +526,36 @@ class AutonomousAgent {
     const s = raw.toLowerCase();
     if (!s) return null;
     const workspace = extractWorkspaceFromText(raw);
+    const apiMatch = s.match(/\b(facebook|instagram|whatsapp|marketing|graph)\b/);
+    const requestedApi = apiMatch
+      ? (apiMatch[1] === 'whatsapp'
+        ? 'whatsapp'
+        : (apiMatch[1] === 'instagram' ? 'instagram' : 'facebook'))
+      : '';
+
+    if (
+      /\bauth\s+login\b/.test(s) ||
+      /\blogin\b.*\b(auth|token)\b/.test(s) ||
+      /\bre-?auth\b/.test(s) ||
+      /\b(reconnect|refresh)\b.*\btoken\b/.test(s)
+    ) {
+      const loginCmd = requestedApi ? `social auth login -a ${requestedApi}` : 'social auth login -a facebook';
+      return {
+        message: requestedApi
+          ? `To authenticate ${requestedApi}, run: ${loginCmd}`
+          : 'Run one of these auth login commands based on the API you need.',
+        actions: [],
+        needsInput: true,
+        suggestions: requestedApi
+          ? [loginCmd, 'After login, ask: "check auth status"']
+          : [
+            'social auth login -a facebook',
+            'social auth login -a instagram',
+            'social auth login -a whatsapp',
+            'After login, ask: "check auth status"'
+          ]
+      };
+    }
 
     if (/\b(ops summary|show ops|ops status|operations status|control plane status)\b/.test(s)) {
       return {
@@ -965,6 +995,17 @@ class AutonomousAgent {
     const provider = resolveChatProvider(this.config);
     const model = resolveChatModel(provider, this.config);
     const key = resolveChatApiKey(provider, this.config);
+    const planningTimeoutMs = Math.max(
+      4500,
+      toNumber(
+        this.options?.planningTimeoutMs ||
+          process.env.SOCIAL_CHAT_PLANNING_TIMEOUT_MS ||
+          process.env.META_CHAT_PLANNING_TIMEOUT_MS ||
+          process.env.SOCIAL_CHAT_TIMEOUT_MS ||
+          process.env.META_CHAT_TIMEOUT_MS,
+        12000
+      )
+    );
 
     const userPrompt = buildUserPrompt({
       summary: this.context.getSummary(),
@@ -979,7 +1020,7 @@ class AutonomousAgent {
       system: `${systemPrompt()}\n\nTOOLS:\n${JSON.stringify(this.tools, null, 2)}`,
       user: userPrompt,
       temperature: 0.2,
-      timeoutMs: 4500
+      timeoutMs: planningTimeoutMs
     });
     const parsed = parseJsonPayload(text);
     if (!parsed || typeof parsed !== 'object') {
