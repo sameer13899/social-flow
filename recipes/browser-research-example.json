@@ -1,0 +1,55 @@
+{
+  "slug": "browser-research-example",
+  "name": "Browser Research Example",
+  "description": "Create a browser session, open a URL, extract text, capture a screenshot, and close the session.",
+  "mode": "sequential",
+  "steps": [
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_session_create",
+      "action_props": {
+        "headless": true,
+        "viewportWidth": 1366,
+        "viewportHeight": 900,
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_goto",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "url": "$input.url",
+        "waitUntil": "domcontentloaded",
+        "timeoutMs": 25000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_extract_text",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "selector": "body",
+        "maxChars": 4000,
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_screenshot",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "fullPage": false,
+        "type": "png",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_session_close",
+      "action_props": {
+        "sessionId": "$prev.session.id"
+      }
+    }
+  ]
+}

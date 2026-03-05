@@ -1,0 +1,116 @@
+{
+  "slug": "browser-form-workflow-example",
+  "name": "Browser Form Workflow Example",
+  "description": "Open a page, fill common login form fields, submit, wait, extract text, screenshot, and close session.",
+  "mode": "sequential",
+  "steps": [
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_session_create",
+      "action_props": {
+        "headless": true,
+        "viewportWidth": 1366,
+        "viewportHeight": 900,
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_goto",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "url": "$input.url",
+        "waitUntil": "domcontentloaded",
+        "timeoutMs": 25000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_wait_for",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "selector": "input[name='email'], input[name='username'], input[type='email'], input[autocomplete='username']",
+        "state": "visible",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_type",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "selector": "input[name='email'], input[name='username'], input[type='email'], input[autocomplete='username']",
+        "text": "$input.username",
+        "clear": true,
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_wait_for",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "selector": "input[name='password'], input[type='password'], input[autocomplete='current-password']",
+        "state": "visible",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_type",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "selector": "input[name='password'], input[type='password'], input[autocomplete='current-password']",
+        "text": "$input.password",
+        "clear": true,
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_click",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "selector": "button[type='submit'], input[type='submit']",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_wait_for",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "selector": "body",
+        "state": "visible",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_extract_text",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "selector": "body",
+        "maxChars": 4000,
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_screenshot",
+      "action_props": {
+        "sessionId": "$prev.session.id",
+        "fullPage": false,
+        "type": "png",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "agent_slug": "browser-agent",
+      "action_key": "browser_session_close",
+      "action_props": {
+        "sessionId": "$prev.session.id"
+      }
+    }
+  ]
+}

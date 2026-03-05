@@ -50,6 +50,24 @@ const BUILTIN_AGENTS = [
     tools: ['meta.status', 'meta.doctor', 'gateway.logs', 'cli.command']
   },
   {
+    slug: 'browser-agent',
+    name: 'Browser Agent',
+    description: 'Runs browser automation flows for research and QA tasks.',
+    tools: [
+      'browser.fetch_page',
+      'browser.list_sessions',
+      'browser.session_create',
+      'browser.goto',
+      'browser.click',
+      'browser.type',
+      'browser.press',
+      'browser.wait_for',
+      'browser.extract_text',
+      'browser.screenshot',
+      'browser.session_close'
+    ]
+  },
+  {
     slug: 'webchat-agent',
     name: 'Webchat Agent',
     description: 'Manages browser chat widget sessions and replies.',
@@ -85,6 +103,27 @@ const ACTION_TOOL_MAP = {
   create_post: 'meta.create_post',
   send_whatsapp: 'whatsapp.send_text',
   send_text: 'whatsapp.send_text',
+  browse_page: 'browser.fetch_page',
+  browse_url: 'browser.fetch_page',
+  fetch_page: 'browser.fetch_page',
+  browser_fetch: 'browser.fetch_page',
+  browser_fetch_page: 'browser.fetch_page',
+  browser_list_sessions: 'browser.list_sessions',
+  browser_create_session: 'browser.session_create',
+  browser_new_session: 'browser.session_create',
+  browser_session_create: 'browser.session_create',
+  browser_open_url: 'browser.goto',
+  browser_navigate: 'browser.goto',
+  browser_goto: 'browser.goto',
+  browser_click: 'browser.click',
+  browser_type: 'browser.type',
+  browser_press: 'browser.press',
+  browser_wait_for: 'browser.wait_for',
+  browser_extract_text: 'browser.extract_text',
+  browser_read_text: 'browser.extract_text',
+  browser_screenshot: 'browser.screenshot',
+  browser_close_session: 'browser.session_close',
+  browser_session_close: 'browser.session_close',
   webchat_create_widget_key: 'webchat.create_widget_key',
   webchat_list_widget_keys: 'webchat.list_widget_keys',
   webchat_delete_widget_key: 'webchat.delete_widget_key',
@@ -109,6 +148,7 @@ const SERVICE_LIMITS_PER_MIN = {
   llm: 30,
   meta_marketing: 120,
   whatsapp_cloud: 80,
+  web_browser: 90,
   webchat_channel: 300,
   baileys_channel: 120,
   gateway: 120,
@@ -116,6 +156,84 @@ const SERVICE_LIMITS_PER_MIN = {
 };
 
 const TRIGGER_TYPES = new Set(['cron', 'webhook', 'event']);
+const PLAYWRIGHT_TIMEOUT_MS = 15_000;
+
+let PLAYWRIGHT_INSTANCE = null;
+let PLAYWRIGHT_LOAD_ATTEMPTED = false;
+
+function browserDriverMissingError(cause = null) {
+  const error = new Error('Playwright driver missing. Install with: npm install playwright && npx playwright install chromium');
+  error.code = 'BROWSER_DRIVER_MISSING';
+  error.status = 503;
+  if (cause) {
+    error.cause = cause;
+  }
+  return error;
+}
+
+function loadPlaywrightOrThrow() {
+  if (PLAYWRIGHT_INSTANCE) return PLAYWRIGHT_INSTANCE;
+  if (PLAYWRIGHT_LOAD_ATTEMPTED) throw browserDriverMissingError();
+  PLAYWRIGHT_LOAD_ATTEMPTED = true;
+
+  const candidates = ['playwright', 'playwright-core'];
+  let lastError = null;
+  for (let i = 0; i < candidates.length; i += 1) {
+    try {
+      // eslint-disable-next-line global-require, import/no-dynamic-require
+      const loaded = require(candidates[i]);
+      if (loaded && loaded.chromium && typeof loaded.chromium.launch === 'function') {
+        PLAYWRIGHT_INSTANCE = loaded;
+        return PLAYWRIGHT_INSTANCE;
+      }
+      if (loaded && loaded.default && loaded.default.chromium && typeof loaded.default.chromium.launch === 'function') {
+        PLAYWRIGHT_INSTANCE = loaded.default;
+        return PLAYWRIGHT_INSTANCE;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw browserDriverMissingError(lastError);
+}
+
+function normalizeWaitUntil(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'load' || raw === 'domcontentloaded' || raw === 'networkidle' || raw === 'commit') return raw;
+  return 'domcontentloaded';
+}
+
+function normalizeWaitState(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'attached' || raw === 'detached' || raw === 'visible' || raw === 'hidden') return raw;
+  return 'visible';
+}
+
+function normalizeMouseButton(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'left' || raw === 'middle' || raw === 'right') return raw;
+  return 'left';
+}
+
+function normalizeScreenshotType(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'png' || raw === 'jpeg') return raw;
+  return 'png';
+}
+
+function normalizeTimeout(value, fallback = PLAYWRIGHT_TIMEOUT_MS) {
+  return Math.max(1_000, Math.min(120_000, toNumber(value, fallback)));
+}
+
+function normalizeBrowserError(error, fallbackMessage = 'Browser operation failed') {
+  const message = String(error?.message || fallbackMessage).trim() || fallbackMessage;
+  const status = Number(error?.status || 0) || undefined;
+  const code = String(error?.code || '').trim() || (error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : 'BROWSER_ERROR');
+  const normalized = new Error(message);
+  normalized.code = code;
+  if (status) normalized.status = status;
+  return normalized;
+}
 
 function toBool(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -159,6 +277,174 @@ function errorPayload(error, fallbackMessage = 'Request failed') {
     status: Number(error?.status || error?.response?.status || 0) || undefined,
     retryable: isRetryable(error)
   };
+}
+
+function normalizeBrowserUrl(rawUrl) {
+  const input = String(rawUrl || '').trim();
+  if (!input) throw new Error('Missing url.');
+
+  const candidate = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(input) ? input : `https://${input}`;
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error(`Invalid url: ${input}`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Only http and https urls are supported.');
+  }
+  return parsed.toString();
+}
+
+function decodeHtmlEntities(rawValue) {
+  const input = String(rawValue || '');
+  if (!input) return '';
+  const named = {
+    amp: '&',
+    lt: '<',
+    gt: '>',
+    quot: '"',
+    apos: "'",
+    nbsp: ' '
+  };
+  return input.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (full, token) => {
+    const raw = String(token || '').trim();
+    if (!raw) return full;
+    if (raw[0] === '#') {
+      const hex = raw[1] && raw[1].toLowerCase() === 'x';
+      const numeric = Number.parseInt(raw.slice(hex ? 2 : 1), hex ? 16 : 10);
+      if (!Number.isFinite(numeric) || numeric < 0) return full;
+      try {
+        return String.fromCodePoint(numeric);
+      } catch {
+        return full;
+      }
+    }
+    const mapped = named[raw.toLowerCase()];
+    return mapped !== undefined ? mapped : full;
+  });
+}
+
+function stripHtmlToText(rawHtml) {
+  const html = String(rawHtml || '');
+  if (!html) return '';
+  const withoutScripts = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  return decodeHtmlEntities(withoutScripts).replace(/\s+/g, ' ').trim();
+}
+
+function extractHtmlTagContent(rawHtml, tagName) {
+  const html = String(rawHtml || '');
+  const safeTag = String(tagName || '').trim();
+  if (!html || !safeTag) return '';
+  const escaped = safeTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`<${escaped}\\b[^>]*>([\\s\\S]*?)<\\/${escaped}>`, 'i');
+  const match = html.match(re);
+  return match ? stripHtmlToText(match[1]) : '';
+}
+
+function extractMetaContent(rawHtml, metaName) {
+  const html = String(rawHtml || '');
+  const name = String(metaName || '').trim();
+  if (!html || !name) return '';
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const tagMatch = html.match(new RegExp(`<meta\\b[^>]*(?:name|property)\\s*=\\s*["']${escaped}["'][^>]*>`, 'i'));
+  if (!tagMatch) return '';
+  const tag = tagMatch[0];
+  const content = tag.match(/content\s*=\s*["']([^"']*)["']/i);
+  return content ? decodeHtmlEntities(content[1]).replace(/\s+/g, ' ').trim() : '';
+}
+
+function extractLinks(rawHtml, baseUrl, maxLinks = 20) {
+  const html = String(rawHtml || '');
+  if (!html || !maxLinks) return [];
+
+  const out = [];
+  const seen = new Set();
+  const anchorRe = /<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match = anchorRe.exec(html);
+  while (match && out.length < maxLinks) {
+    const hrefRaw = String(match[1] || '').trim();
+    const label = stripHtmlToText(match[2] || '').slice(0, 160);
+    const lowerHref = hrefRaw.toLowerCase();
+    if (lowerHref && !lowerHref.startsWith('#')
+      && !lowerHref.startsWith('javascript:')
+      && !lowerHref.startsWith('mailto:')
+      && !lowerHref.startsWith('tel:')
+      && !lowerHref.startsWith('data:')) {
+      try {
+        const absolute = new URL(hrefRaw, baseUrl).toString();
+        if (!seen.has(absolute)) {
+          seen.add(absolute);
+          out.push({ href: absolute, text: label });
+        }
+      } catch {
+        // Ignore malformed href values.
+      }
+    }
+    match = anchorRe.exec(html);
+  }
+  return out;
+}
+
+async function fetchBrowserPageSummary(rawUrl, options = {}) {
+  const url = normalizeBrowserUrl(rawUrl);
+  const timeoutMs = Math.max(1_000, Math.min(30_000, toNumber(options.timeoutMs, 15_000)));
+  const maxTextChars = Math.max(300, Math.min(40_000, toNumber(options.maxTextChars, 4_000)));
+  const maxLinks = Math.max(0, Math.min(80, toNumber(options.maxLinks, 20)));
+  const includeHtml = Boolean(options.includeHtml);
+  const maxHtmlChars = Math.max(2_000, Math.min(500_000, toNumber(options.maxHtmlChars, 120_000)));
+
+  const abortController = new AbortController();
+  const timer = setTimeout(() => abortController.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: abortController.signal,
+      headers: {
+        'user-agent': 'Social-Flow-BrowserAgent/1.0',
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    });
+
+    const fullBody = await response.text();
+    const html = fullBody.slice(0, maxHtmlChars);
+    const text = stripHtmlToText(html);
+    const finalUrl = String(response.url || url);
+    const contentType = String(response.headers.get('content-type') || '').trim();
+
+    return {
+      ok: response.ok,
+      url,
+      finalUrl,
+      status: Number(response.status || 0) || 0,
+      statusText: String(response.statusText || ''),
+      contentType,
+      title: extractHtmlTagContent(html, 'title'),
+      description: extractMetaContent(html, 'description') || extractMetaContent(html, 'og:description'),
+      textPreview: text.slice(0, maxTextChars),
+      textLength: text.length,
+      htmlLength: fullBody.length,
+      truncated: fullBody.length > html.length,
+      links: extractLinks(html, finalUrl, maxLinks),
+      html: includeHtml ? html : '',
+      fetchedAt: storage.nowIso()
+    };
+  } catch (error) {
+    if (error && String(error.name || '') === 'AbortError') {
+      const timeoutError = new Error(`Browser fetch timed out after ${timeoutMs}ms.`);
+      timeoutError.code = 'BROWSER_TIMEOUT';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function pathGet(source, rawPath) {
@@ -369,6 +655,7 @@ class HostedPlatform {
     this.schedulerHandle = null;
     this.cronRunCache = new Map();
     this.rateBuckets = new Map();
+    this.browserSessions = new Map();
     this.webchat = new WebchatChannel({
       emitEvent: (payload) => this.emitEvent(payload),
       log: (entry = {}) => this.appendLog({
@@ -415,13 +702,375 @@ class HostedPlatform {
     }
   }
 
-  stop() {
+  async stop() {
     if (this.schedulerHandle) {
       clearInterval(this.schedulerHandle);
       this.schedulerHandle = null;
     }
     if (this.baileys && typeof this.baileys.stop === 'function') {
       this.baileys.stop();
+    }
+    await this.closeAllBrowserSessions();
+  }
+
+  browserSessionSnapshot(record) {
+    const row = storage.isPlainObject(record) ? record : {};
+    return {
+      id: String(row.id || ''),
+      userId: String(row.userId || ''),
+      createdAt: String(row.createdAt || ''),
+      updatedAt: String(row.updatedAt || ''),
+      lastUrl: String(row.lastUrl || ''),
+      lastTitle: String(row.lastTitle || '')
+    };
+  }
+
+  browserSessionRecordForUser(userId, sessionId) {
+    const safeUserId = storage.sanitizeId(userId);
+    const id = String(sessionId || '').trim();
+    if (!id) {
+      const error = new Error('Missing browser session id.');
+      error.code = 'BROWSER_SESSION_REQUIRED';
+      error.status = 400;
+      throw error;
+    }
+    const record = this.browserSessions.get(id);
+    if (!record || String(record.userId || '') !== safeUserId) {
+      const error = new Error('Browser session not found.');
+      error.code = 'BROWSER_SESSION_NOT_FOUND';
+      error.status = 404;
+      throw error;
+    }
+    return record;
+  }
+
+  async refreshBrowserSessionMeta(record) {
+    const rec = record;
+    if (!rec || !rec.page) return;
+    rec.updatedAt = storage.nowIso();
+    try {
+      rec.lastUrl = String(rec.page.url() || '');
+    } catch {
+      rec.lastUrl = '';
+    }
+    try {
+      rec.lastTitle = String((await rec.page.title()) || '');
+    } catch {
+      rec.lastTitle = '';
+    }
+  }
+
+  async createBrowserSession(userId, payload = {}) {
+    const safeUserId = storage.sanitizeId(userId);
+    const playwright = loadPlaywrightOrThrow();
+
+    const headless = payload.headless !== false;
+    const viewportWidth = Math.max(320, Math.min(3840, toNumber(payload.viewportWidth, 1366)));
+    const viewportHeight = Math.max(240, Math.min(2160, toNumber(payload.viewportHeight, 900)));
+    const timeoutMs = normalizeTimeout(payload.timeoutMs, PLAYWRIGHT_TIMEOUT_MS);
+    const userAgent = String(payload.userAgent || '').trim();
+
+    let browser = null;
+    try {
+      browser = await playwright.chromium.launch({ headless });
+      const context = await browser.newContext({
+        viewport: { width: viewportWidth, height: viewportHeight },
+        userAgent: userAgent || undefined
+      });
+      const page = await context.newPage();
+      page.setDefaultTimeout(timeoutMs);
+      page.setDefaultNavigationTimeout(timeoutMs);
+
+      const id = storage.genId('brows');
+      const record = {
+        id,
+        userId: safeUserId,
+        createdAt: storage.nowIso(),
+        updatedAt: storage.nowIso(),
+        lastUrl: '',
+        lastTitle: '',
+        browser,
+        context,
+        page
+      };
+      this.browserSessions.set(id, record);
+
+      return {
+        session: this.browserSessionSnapshot(record),
+        browser: {
+          engine: 'chromium',
+          headless,
+          viewportWidth,
+          viewportHeight
+        }
+      };
+    } catch (error) {
+      if (browser && typeof browser.close === 'function') {
+        try {
+          await browser.close();
+        } catch {
+          // ignore close errors
+        }
+      }
+      throw normalizeBrowserError(error);
+    }
+  }
+
+  async listBrowserSessions(userId) {
+    const safeUserId = storage.sanitizeId(userId);
+    return Array.from(this.browserSessions.values())
+      .filter((row) => String(row.userId || '') === safeUserId)
+      .sort((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || '')) * -1)
+      .map((row) => this.browserSessionSnapshot(row));
+  }
+
+  async closeBrowserSession(userId, sessionId) {
+    const record = this.browserSessionRecordForUser(userId, sessionId);
+    this.browserSessions.delete(record.id);
+    try {
+      if (record.browser && typeof record.browser.close === 'function') {
+        await record.browser.close();
+      }
+    } catch (error) {
+      throw normalizeBrowserError(error);
+    }
+    return { closed: true, sessionId: record.id };
+  }
+
+  async closeAllBrowserSessions() {
+    const sessions = Array.from(this.browserSessions.values());
+    this.browserSessions.clear();
+    await Promise.allSettled(sessions.map(async (record) => {
+      if (record.browser && typeof record.browser.close === 'function') {
+        await record.browser.close();
+      }
+    }));
+  }
+
+  async browserGoto(userId, payload = {}) {
+    const record = this.browserSessionRecordForUser(userId, payload.sessionId || payload.id || '');
+    const url = normalizeBrowserUrl(payload.url || payload.href || '');
+    const waitUntil = normalizeWaitUntil(payload.waitUntil);
+    const timeout = normalizeTimeout(payload.timeoutMs, PLAYWRIGHT_TIMEOUT_MS);
+    try {
+      const response = await record.page.goto(url, { waitUntil, timeout });
+      await this.refreshBrowserSessionMeta(record);
+      return {
+        session: this.browserSessionSnapshot(record),
+        navigation: {
+          requestedUrl: url,
+          finalUrl: record.lastUrl,
+          status: response ? Number(response.status() || 0) : 0,
+          ok: response ? Boolean(response.ok()) : true,
+          waitUntil
+        }
+      };
+    } catch (error) {
+      throw normalizeBrowserError(error, 'Browser navigation failed');
+    }
+  }
+
+  async browserClick(userId, payload = {}) {
+    const record = this.browserSessionRecordForUser(userId, payload.sessionId || payload.id || '');
+    const selector = String(payload.selector || '').trim();
+    if (!selector) {
+      const error = new Error('Missing selector.');
+      error.code = 'BROWSER_SELECTOR_REQUIRED';
+      error.status = 400;
+      throw error;
+    }
+    const timeout = normalizeTimeout(payload.timeoutMs, PLAYWRIGHT_TIMEOUT_MS);
+    const button = normalizeMouseButton(payload.button);
+    const clickCount = Math.max(1, Math.min(5, toNumber(payload.clickCount, 1)));
+    try {
+      await record.page.waitForSelector(selector, { state: 'visible', timeout });
+      await record.page.click(selector, { button, clickCount, timeout });
+      await this.refreshBrowserSessionMeta(record);
+      return {
+        session: this.browserSessionSnapshot(record),
+        selector,
+        button,
+        clickCount,
+        clicked: true
+      };
+    } catch (error) {
+      throw normalizeBrowserError(error, 'Browser click failed');
+    }
+  }
+
+  async browserType(userId, payload = {}) {
+    const record = this.browserSessionRecordForUser(userId, payload.sessionId || payload.id || '');
+    const selector = String(payload.selector || '').trim();
+    if (!selector) {
+      const error = new Error('Missing selector.');
+      error.code = 'BROWSER_SELECTOR_REQUIRED';
+      error.status = 400;
+      throw error;
+    }
+    const text = String(payload.text || payload.value || '');
+    const clear = Boolean(payload.clear);
+    const delay = Math.max(0, Math.min(300, toNumber(payload.delayMs, 0)));
+    const timeout = normalizeTimeout(payload.timeoutMs, PLAYWRIGHT_TIMEOUT_MS);
+    try {
+      await record.page.waitForSelector(selector, { state: 'visible', timeout });
+      if (clear) {
+        await record.page.fill(selector, '', { timeout });
+      }
+      if (clear && delay <= 0) {
+        await record.page.fill(selector, text, { timeout });
+      } else {
+        await record.page.type(selector, text, { delay, timeout });
+      }
+      await this.refreshBrowserSessionMeta(record);
+      return {
+        session: this.browserSessionSnapshot(record),
+        selector,
+        typedChars: text.length,
+        clear,
+        delayMs: delay
+      };
+    } catch (error) {
+      throw normalizeBrowserError(error, 'Browser type failed');
+    }
+  }
+
+  async browserPress(userId, payload = {}) {
+    const record = this.browserSessionRecordForUser(userId, payload.sessionId || payload.id || '');
+    const key = String(payload.key || '').trim();
+    if (!key) {
+      const error = new Error('Missing key.');
+      error.code = 'BROWSER_KEY_REQUIRED';
+      error.status = 400;
+      throw error;
+    }
+    const selector = String(payload.selector || '').trim();
+    const delay = Math.max(0, Math.min(300, toNumber(payload.delayMs, 0)));
+    const timeout = normalizeTimeout(payload.timeoutMs, PLAYWRIGHT_TIMEOUT_MS);
+    try {
+      if (selector) {
+        await record.page.waitForSelector(selector, { state: 'visible', timeout });
+        await record.page.focus(selector, { timeout });
+      }
+      await record.page.keyboard.press(key, { delay });
+      await this.refreshBrowserSessionMeta(record);
+      return {
+        session: this.browserSessionSnapshot(record),
+        selector,
+        key,
+        pressed: true
+      };
+    } catch (error) {
+      throw normalizeBrowserError(error, 'Browser key press failed');
+    }
+  }
+
+  async browserWaitFor(userId, payload = {}) {
+    const record = this.browserSessionRecordForUser(userId, payload.sessionId || payload.id || '');
+    const selector = String(payload.selector || '').trim();
+    if (!selector) {
+      const error = new Error('Missing selector.');
+      error.code = 'BROWSER_SELECTOR_REQUIRED';
+      error.status = 400;
+      throw error;
+    }
+    const state = normalizeWaitState(payload.state);
+    const timeout = normalizeTimeout(payload.timeoutMs, PLAYWRIGHT_TIMEOUT_MS);
+    try {
+      await record.page.waitForSelector(selector, { state, timeout });
+      await this.refreshBrowserSessionMeta(record);
+      return {
+        session: this.browserSessionSnapshot(record),
+        selector,
+        state,
+        matched: true
+      };
+    } catch (error) {
+      throw normalizeBrowserError(error, 'Browser wait failed');
+    }
+  }
+
+  async browserExtractText(userId, payload = {}) {
+    const record = this.browserSessionRecordForUser(userId, payload.sessionId || payload.id || '');
+    const selector = String(payload.selector || '').trim();
+    const includeHtml = Boolean(payload.includeHtml);
+    const maxChars = Math.max(200, Math.min(120_000, toNumber(payload.maxChars, 4_000)));
+    const maxHtmlChars = Math.max(500, Math.min(400_000, toNumber(payload.maxHtmlChars, 80_000)));
+    const timeout = normalizeTimeout(payload.timeoutMs, PLAYWRIGHT_TIMEOUT_MS);
+    try {
+      let text = '';
+      let html = '';
+
+      if (selector) {
+        await record.page.waitForSelector(selector, { state: 'attached', timeout });
+        const locator = record.page.locator(selector).first();
+        try {
+          text = String(await locator.innerText({ timeout }));
+        } catch {
+          text = String(await locator.textContent({ timeout }) || '');
+        }
+        if (includeHtml) {
+          html = String(await locator.evaluate((node) => node.outerHTML || '') || '');
+        }
+      } else {
+        text = String(await record.page.evaluate(() => {
+          if (!document || !document.body) return '';
+          return document.body.innerText || document.body.textContent || '';
+        }) || '');
+        if (includeHtml) {
+          html = String(await record.page.content() || '');
+        }
+      }
+
+      const compactText = text.replace(/\s+/g, ' ').trim();
+      await this.refreshBrowserSessionMeta(record);
+      return {
+        session: this.browserSessionSnapshot(record),
+        selector,
+        text: compactText.slice(0, maxChars),
+        textLength: compactText.length,
+        truncated: compactText.length > maxChars,
+        html: includeHtml ? html.slice(0, maxHtmlChars) : ''
+      };
+    } catch (error) {
+      throw normalizeBrowserError(error, 'Browser text extraction failed');
+    }
+  }
+
+  async browserScreenshot(userId, payload = {}) {
+    const record = this.browserSessionRecordForUser(userId, payload.sessionId || payload.id || '');
+    const selector = String(payload.selector || '').trim();
+    const fullPage = Boolean(payload.fullPage);
+    const type = normalizeScreenshotType(payload.type);
+    const timeout = normalizeTimeout(payload.timeoutMs, PLAYWRIGHT_TIMEOUT_MS);
+    const quality = Math.max(1, Math.min(100, toNumber(payload.quality, 80)));
+    try {
+      let buffer;
+      if (selector) {
+        await record.page.waitForSelector(selector, { state: 'visible', timeout });
+        buffer = await record.page.locator(selector).first().screenshot({
+          type,
+          ...(type === 'jpeg' ? { quality } : {})
+        });
+      } else {
+        buffer = await record.page.screenshot({
+          type,
+          fullPage,
+          ...(type === 'jpeg' ? { quality } : {})
+        });
+      }
+      await this.refreshBrowserSessionMeta(record);
+      return {
+        session: this.browserSessionSnapshot(record),
+        selector,
+        fullPage,
+        image: {
+          mimeType: type === 'jpeg' ? 'image/jpeg' : 'image/png',
+          dataBase64: Buffer.from(buffer).toString('base64'),
+          sizeBytes: Buffer.byteLength(buffer)
+        }
+      };
+    } catch (error) {
+      throw normalizeBrowserError(error, 'Browser screenshot failed');
     }
   }
 
@@ -1099,6 +1748,260 @@ class HostedPlatform {
         }
       },
       {
+        key: 'browser.list_sessions',
+        service: 'web_browser',
+        title: 'Browser List Sessions',
+        description: 'List active browser automation sessions for the current user.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false
+        },
+        handler: async (_props, context) => this.listBrowserSessions(context.userId || 'default')
+      },
+      {
+        key: 'browser.session_create',
+        service: 'web_browser',
+        title: 'Browser Session Create',
+        description: 'Start a new Playwright Chromium session.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            headless: { type: 'boolean' },
+            viewportWidth: { type: 'number' },
+            viewportHeight: { type: 'number' },
+            userAgent: { type: 'string' },
+            timeoutMs: { type: 'number' }
+          },
+          additionalProperties: false
+        },
+        handler: async (props, context) => this.createBrowserSession(context.userId || 'default', {
+          headless: props.headless,
+          viewportWidth: props.viewportWidth,
+          viewportHeight: props.viewportHeight,
+          userAgent: props.userAgent,
+          timeoutMs: props.timeoutMs
+        })
+      },
+      {
+        key: 'browser.goto',
+        service: 'web_browser',
+        title: 'Browser Goto',
+        description: 'Navigate an existing browser session to a URL.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' },
+            url: { type: 'string' },
+            waitUntil: { type: 'string' },
+            timeoutMs: { type: 'number' }
+          },
+          required: ['sessionId', 'url'],
+          additionalProperties: false
+        },
+        handler: async (props, context) => this.browserGoto(context.userId || 'default', {
+          sessionId: props.sessionId,
+          url: props.url,
+          waitUntil: props.waitUntil,
+          timeoutMs: props.timeoutMs
+        })
+      },
+      {
+        key: 'browser.click',
+        service: 'web_browser',
+        title: 'Browser Click',
+        description: 'Click an element in a browser session.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' },
+            selector: { type: 'string' },
+            button: { type: 'string' },
+            clickCount: { type: 'number' },
+            timeoutMs: { type: 'number' }
+          },
+          required: ['sessionId', 'selector'],
+          additionalProperties: false
+        },
+        handler: async (props, context) => this.browserClick(context.userId || 'default', {
+          sessionId: props.sessionId,
+          selector: props.selector,
+          button: props.button,
+          clickCount: props.clickCount,
+          timeoutMs: props.timeoutMs
+        })
+      },
+      {
+        key: 'browser.type',
+        service: 'web_browser',
+        title: 'Browser Type',
+        description: 'Type or fill text into an element.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' },
+            selector: { type: 'string' },
+            text: { type: 'string' },
+            clear: { type: 'boolean' },
+            delayMs: { type: 'number' },
+            timeoutMs: { type: 'number' }
+          },
+          required: ['sessionId', 'selector', 'text'],
+          additionalProperties: false
+        },
+        handler: async (props, context) => this.browserType(context.userId || 'default', {
+          sessionId: props.sessionId,
+          selector: props.selector,
+          text: props.text,
+          clear: props.clear,
+          delayMs: props.delayMs,
+          timeoutMs: props.timeoutMs
+        })
+      },
+      {
+        key: 'browser.press',
+        service: 'web_browser',
+        title: 'Browser Press',
+        description: 'Press a keyboard key in the browser session.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' },
+            key: { type: 'string' },
+            selector: { type: 'string' },
+            delayMs: { type: 'number' },
+            timeoutMs: { type: 'number' }
+          },
+          required: ['sessionId', 'key'],
+          additionalProperties: false
+        },
+        handler: async (props, context) => this.browserPress(context.userId || 'default', {
+          sessionId: props.sessionId,
+          key: props.key,
+          selector: props.selector,
+          delayMs: props.delayMs,
+          timeoutMs: props.timeoutMs
+        })
+      },
+      {
+        key: 'browser.wait_for',
+        service: 'web_browser',
+        title: 'Browser Wait For',
+        description: 'Wait for a selector state transition.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' },
+            selector: { type: 'string' },
+            state: { type: 'string' },
+            timeoutMs: { type: 'number' }
+          },
+          required: ['sessionId', 'selector'],
+          additionalProperties: false
+        },
+        handler: async (props, context) => this.browserWaitFor(context.userId || 'default', {
+          sessionId: props.sessionId,
+          selector: props.selector,
+          state: props.state,
+          timeoutMs: props.timeoutMs
+        })
+      },
+      {
+        key: 'browser.extract_text',
+        service: 'web_browser',
+        title: 'Browser Extract Text',
+        description: 'Extract text (and optional HTML) from page or selector.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' },
+            selector: { type: 'string' },
+            includeHtml: { type: 'boolean' },
+            maxChars: { type: 'number' },
+            maxHtmlChars: { type: 'number' },
+            timeoutMs: { type: 'number' }
+          },
+          required: ['sessionId'],
+          additionalProperties: false
+        },
+        handler: async (props, context) => this.browserExtractText(context.userId || 'default', {
+          sessionId: props.sessionId,
+          selector: props.selector,
+          includeHtml: props.includeHtml,
+          maxChars: props.maxChars,
+          maxHtmlChars: props.maxHtmlChars,
+          timeoutMs: props.timeoutMs
+        })
+      },
+      {
+        key: 'browser.screenshot',
+        service: 'web_browser',
+        title: 'Browser Screenshot',
+        description: 'Capture page or element screenshot as base64 image.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' },
+            selector: { type: 'string' },
+            fullPage: { type: 'boolean' },
+            type: { type: 'string' },
+            quality: { type: 'number' },
+            timeoutMs: { type: 'number' }
+          },
+          required: ['sessionId'],
+          additionalProperties: false
+        },
+        handler: async (props, context) => this.browserScreenshot(context.userId || 'default', {
+          sessionId: props.sessionId,
+          selector: props.selector,
+          fullPage: props.fullPage,
+          type: props.type,
+          quality: props.quality,
+          timeoutMs: props.timeoutMs
+        })
+      },
+      {
+        key: 'browser.session_close',
+        service: 'web_browser',
+        title: 'Browser Session Close',
+        description: 'Close and dispose a browser session.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' }
+          },
+          required: ['sessionId'],
+          additionalProperties: false
+        },
+        handler: async (props, context) => this.closeBrowserSession(context.userId || 'default', props.sessionId)
+      },
+      {
+        key: 'browser.fetch_page',
+        service: 'web_browser',
+        title: 'Browser Fetch Page',
+        description: 'Fetch and summarize an HTTP(S) web page with extracted links.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            url: { type: 'string' },
+            timeoutMs: { type: 'number' },
+            maxTextChars: { type: 'number' },
+            maxLinks: { type: 'number' },
+            includeHtml: { type: 'boolean' },
+            maxHtmlChars: { type: 'number' }
+          },
+          required: ['url'],
+          additionalProperties: false
+        },
+        handler: async (props) => fetchBrowserPageSummary(props.url, {
+          timeoutMs: Number(props.timeoutMs || 15_000) || 15_000,
+          maxTextChars: Number(props.maxTextChars || 4_000) || 4_000,
+          maxLinks: Number(props.maxLinks || 20) || 20,
+          includeHtml: Boolean(props.includeHtml),
+          maxHtmlChars: Number(props.maxHtmlChars || 120_000) || 120_000
+        })
+      },
+      {
         key: 'webchat.create_widget_key',
         service: 'webchat_channel',
         title: 'Webchat Create Widget Key',
@@ -1743,6 +2646,9 @@ class HostedPlatform {
     if (/\b(whatsapp|message|send text|send message|waba)\b/.test(raw)) {
       out.push('messaging-agent');
     }
+    if (/\b(browser|browse|web page|webpage|website|url|link|crawl|scrape|research)\b/.test(raw)) {
+      out.push('browser-agent');
+    }
     if (/\b(webchat|live chat|widget|visitor|inbox)\b/.test(raw)) {
       out.push('webchat-agent');
     }
@@ -1783,6 +2689,41 @@ class HostedPlatform {
     }
 
     const taskText = String(task || '').toLowerCase();
+    if (/\b(browser|browse|web page|webpage|website|url|link|crawl|scrape|research)\b/.test(taskText)) {
+      if (/\b(list|show)\b/.test(taskText) && /\bsession(s)?\b/.test(taskText) && allowedTools.includes('browser.list_sessions')) {
+        return 'browser.list_sessions';
+      }
+      if (/\b(create|new|start|open)\b/.test(taskText) && /\bsession(s)?\b/.test(taskText) && allowedTools.includes('browser.session_create')) {
+        return 'browser.session_create';
+      }
+      if (/\b(close|end|stop|dispose)\b/.test(taskText) && /\bsession(s)?\b/.test(taskText) && allowedTools.includes('browser.session_close')) {
+        return 'browser.session_close';
+      }
+      if (/\b(screenshot|screen shot|capture)\b/.test(taskText) && allowedTools.includes('browser.screenshot')) {
+        return 'browser.screenshot';
+      }
+      if (/\b(extract|read|scrape|content|text)\b/.test(taskText) && allowedTools.includes('browser.extract_text')) {
+        return 'browser.extract_text';
+      }
+      if (/\b(click|tap)\b/.test(taskText) && allowedTools.includes('browser.click')) {
+        return 'browser.click';
+      }
+      if (/\b(type|fill|enter)\b/.test(taskText) && allowedTools.includes('browser.type')) {
+        return 'browser.type';
+      }
+      if (/\b(key|press|keyboard|enter key)\b/.test(taskText) && allowedTools.includes('browser.press')) {
+        return 'browser.press';
+      }
+      if (/\b(wait|until|visible|hidden)\b/.test(taskText) && allowedTools.includes('browser.wait_for')) {
+        return 'browser.wait_for';
+      }
+      if (/\b(open|visit|navigate|goto)\b/.test(taskText) && allowedTools.includes('browser.goto')) {
+        return 'browser.goto';
+      }
+      if (allowedTools.includes('browser.fetch_page')) {
+        return 'browser.fetch_page';
+      }
+    }
     if (/\b(send|whatsapp|message|text)\b/.test(taskText) && allowedTools.includes('whatsapp.send_text')) {
       return 'whatsapp.send_text';
     }
@@ -2840,6 +3781,19 @@ class HostedPlatform {
       toolActions: {
         meta_marketing: ['status', 'doctor', 'get_profile', 'list_ads', 'create_post'],
         whatsapp_cloud: ['send_whatsapp', 'logs'],
+        web_browser: [
+          'fetch_page',
+          'list_sessions',
+          'session_create',
+          'goto',
+          'click',
+          'type',
+          'press',
+          'wait_for',
+          'extract_text',
+          'screenshot',
+          'session_close'
+        ],
         webchat_channel: ['create_widget_key', 'list_widget_keys', 'list_sessions', 'get_messages', 'reply', 'set_status'],
         baileys_channel: ['create_session', 'list_sessions', 'connect_session', 'disconnect_session', 'send_text', 'get_messages']
       },
