@@ -354,7 +354,7 @@ async function resolveFrontendUrl({
 function registerStudioCommand(program) {
   program
     .command('studio')
-    .description('Open bundled Social Flow Studio (or external/local frontend) and verify gateway status')
+    .description('Open the Social Flow Studio app (or external/local frontend) and verify gateway status')
     .option('--url <url>', 'Gateway base URL', 'http://127.0.0.1:1310')
     .option('--frontend-url <url>', 'External Studio/frontend URL to open', process.env.SOCIAL_STUDIO_URL || '')
     .option('--frontend-path <path>', 'Local frontend path (Vite project root or built static directory)')
@@ -366,9 +366,8 @@ function registerStudioCommand(program) {
       const baseUrl = parseBaseUrl(opts.url);
       const healthUrl = new URL('/api/health', baseUrl).toString();
       const statusUrl = new URL('/api/status?doctor=1', baseUrl).toString();
-      const studioContextUrl = new URL('/studio', baseUrl).toString();
-      const studioAppUrl = new URL('/studio/app', baseUrl).toString();
-      const studioFullUrl = new URL('/studio/full/', baseUrl).toString();
+      const studioAppUrl = new URL('/studio/app/', baseUrl).toString();
+      const studioEntryUrl = new URL('/studio', baseUrl).toString();
       const gatewayUrl = baseUrl.toString().replace(/\/$/, '');
       const frontendPath = String(opts.frontendPath || '').trim();
       const frontendPort = toPort(opts.frontendPort, 4173);
@@ -434,9 +433,8 @@ function registerStudioCommand(program) {
         rows.push(chalk.green(`Gateway reachable: ${baseUrl.toString().replace(/\/$/, '')}`));
         rows.push(chalk.gray(`Health endpoint: ${healthUrl}`));
         rows.push(chalk.gray(`Status page: ${statusUrl}`));
-        rows.push(chalk.gray(`Studio switcher: ${studioContextUrl}`));
-        rows.push(chalk.gray(`Studio bundled app: ${studioAppUrl}`));
-        rows.push(chalk.gray(`Studio full function-calling app: ${studioFullUrl}`));
+        rows.push(chalk.gray(`Studio entry: ${studioEntryUrl}`));
+        rows.push(chalk.gray(`Studio app: ${studioAppUrl}`));
         if (frontendUrl) rows.push(chalk.gray(`Studio frontend: ${frontendUrl}`));
         if (replacedExternal && versionMismatch) {
           rows.push(chalk.yellow(`Replaced stale gateway version ${remoteVersion} with ${localVersion}.`));
@@ -446,7 +444,7 @@ function registerStudioCommand(program) {
           rows.push(chalk.yellow('Detected stale gateway process, but auto-replace could not complete in this terminal.'));
           rows.push(chalk.gray(`Stop the process on port ${port}, then rerun social studio.`));
         } else if (studioRouteUnavailable && opts.autoStart === false) {
-          rows.push(chalk.yellow('Gateway is running, but /studio/app is unavailable. Re-run without --no-auto-start to replace the stale process.'));
+          rows.push(chalk.yellow('Gateway is running, but /studio/app/ is unavailable. Re-run without --no-auto-start to replace the stale process.'));
         } else if (versionMismatch && opts.autoStart === false) {
           rows.push(chalk.yellow(`Gateway version mismatch (${remoteVersion} vs local ${localVersion}). Re-run without --no-auto-start to auto-replace.`));
         }
@@ -460,7 +458,7 @@ function registerStudioCommand(program) {
       if (!frontend.ok) {
         rows.push(chalk.yellow(`Frontend wiring warning: ${frontend.reason}`));
       } else if (frontend.mode === 'none') {
-        rows.push(chalk.gray('Frontend not specified. Opening bundled Studio app.'));
+        rows.push(chalk.gray('Frontend not specified. Opening the Studio app route.'));
       } else if (frontend.started) {
         rows.push(chalk.green(`Frontend started (${frontend.mode}) on port ${frontendPort}.`));
         if (frontend.logFile) rows.push(chalk.gray(`Frontend log: ${frontend.logFile}`));

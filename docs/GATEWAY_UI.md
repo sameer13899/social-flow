@@ -20,9 +20,7 @@ Supported workflow categories:
 - Developer operations (auth status, token debug, webhook subscription checks)
 
 Root `/` is disabled by default in current builds.
-Studio switcher UI is served at `/studio` (or `/studio/context`) and can toggle between bundled Studio and licensed full function-calling screens.
-Bundled Studio UI is served at `/studio/app`.
-Licensed full function-calling UI is served at `/studio/full/`.
+Studio entry route `/studio` redirects to the main Studio app at `/studio/app/`.
 If you want gateway to serve additional static Studio assets, set:
 
 - `SOCIAL_STUDIO_ASSET_DIRS=<comma-separated-absolute-or-relative-dirs>`
@@ -31,9 +29,8 @@ Each directory must be inside allowed gateway roots (project root / configured C
 
 Studio routes:
 
-- `GET /studio` or `GET /studio/context` (single-entry Studio switcher)
-- `GET /studio/app` (bundled Studio frontend SPA)
-- `GET /studio/full/` (licensed full function-calling frontend)
+- `GET /studio` (redirect to the Studio app)
+- `GET /studio/app/` (primary Studio frontend)
 
 ## Endpoints
 
@@ -155,9 +152,9 @@ Frontend requirements:
 - Use `wss://<gateway-domain>/ws?gatewayKey=<SOCIAL_GATEWAY_API_KEY>` for WebSocket auth.
 - Public webchat endpoints (`/api/webchat/public/*`) and health route (`/api/health`) remain unauthenticated.
 
-## External Starter Screens
+## Studio Frontend
 
-An external starter UI (multi-screen, agentic flow) is available at:
+The Studio frontend source lives at:
 
 - `docs/agentic-frontend/`
 
@@ -183,7 +180,6 @@ It includes:
 
 Default behavior:
 
-- Without frontend overrides, `social studio` opens bundled app route: `/studio/app`
-- Studio switcher remains reachable at `/studio`
-- Licensed full function-calling app remains reachable at `/studio/full/`
+- Without frontend overrides, `social studio` opens the Studio app route: `/studio/app/`
+- `/studio` remains the human-friendly entry route and redirects to `/studio/app/`
 

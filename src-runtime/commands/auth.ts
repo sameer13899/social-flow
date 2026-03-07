@@ -5,6 +5,7 @@ const inquirer = require('inquirer');
 const config = require('../../lib/config');
 const MetaAPIClient = require('../../lib/api-client');
 const { openUrl } = require('../../lib/open-url');
+const { createBrowserAssistSession } = require('../../lib/browser-assist');
 const { oauthLogin, exchangeForLongLivedToken } = require('../../lib/oauth');
 
 type ApiName = 'facebook' | 'instagram' | 'whatsapp';
@@ -15,16 +16,19 @@ type AuthLoginOptions = {
   api: string;
   token?: string;
   oauth?: boolean;
+  manual?: boolean;
   scopes?: boolean;
   scope?: string;
   longLived?: boolean;
   open?: boolean;
+  browserAgent?: boolean;
 };
 
 type AuthAppOptions = {
   id?: string;
   secret?: string;
   open?: boolean;
+  browserAgent?: boolean;
 };
 
 type AuthLogoutOptions = {
@@ -39,6 +43,16 @@ type BrowserReadyPrompt = {
   api: ApiName;
   url: string;
   canOpen: boolean;
+  browserSession?: {
+    via?: string;
+    goto?: (url: string) => Promise<boolean>;
+  } | null;
+};
+
+type LoginFlowResolution = {
+  mode: 'manual' | 'oauth';
+  shouldPromptForAppSetup: boolean;
+  reason: string;
 };
 
 const SCOPES: ScopeMap = {
@@ -85,7 +99,86 @@ function tokenHelpUrl(api: ApiName, apiVersion: string): string {
   return `https://developers.facebook.com/tools/explorer/?version=${encodeURIComponent(apiVersion)}`;
 }
 
-async function confirmBrowserReady({ api, url, canOpen }: BrowserReadyPrompt) {
+function supportsAutomaticOauth(api: ApiName) {
+  return api === 'facebook' || api === 'instagram';
+}
+
+function resolveLoginFlow(options: {
+  api: ApiName;
+  token?: string;
+  oauth?: boolean;
+  manual?: boolean;
+  hasAppCredentials?: boolean;
+}): LoginFlowResolution {
+  if (String(options.token || '').trim()) {
+    return {
+      mode: 'manual',
+      shouldPromptForAppSetup: false,
+      reason: 'token_provided'
+    };
+  }
+
+  if (!supportsAutomaticOauth(options.api)) {
+    return {
+      mode: 'manual',
+      shouldPromptForAppSetup: false,
+      reason: 'manual_only_api'
+    };
+  }
+
+  if (options.manual) {
+    return {
+      mode: 'manual',
+      shouldPromptForAppSetup: false,
+      reason: 'manual_requested'
+    };
+  }
+
+  if (options.oauth && options.hasAppCredentials) {
+    return {
+      mode: 'oauth',
+      shouldPromptForAppSetup: false,
+      reason: 'explicit_oauth'
+    };
+  }
+
+  if (options.oauth && !options.hasAppCredentials) {
+    return {
+      mode: 'manual',
+      shouldPromptForAppSetup: true,
+      reason: 'oauth_requested_missing_app_credentials'
+    };
+  }
+
+  if (options.hasAppCredentials) {
+    return {
+      mode: 'oauth',
+      shouldPromptForAppSetup: false,
+      reason: 'auto_oauth_available'
+    };
+  }
+
+  return {
+    mode: 'manual',
+    shouldPromptForAppSetup: true,
+    reason: 'missing_app_credentials'
+  };
+}
+
+async function openBrowserPage(url: string, options: {
+  canOpen?: boolean;
+  browserSession?: {
+    goto?: (target: string) => Promise<boolean>;
+  } | null;
+} = {}) {
+  if (options.canOpen === false || !url) return false;
+  if (options.browserSession && typeof options.browserSession.goto === 'function') {
+    return options.browserSession.goto(url);
+  }
+  return openUrl(url);
+}
+
+async function confirmBrowserReady({ api, url, canOpen, browserSession }: BrowserReadyPrompt) {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const answers = await inquirer.prompt([
@@ -117,16 +210,22 @@ async function confirmBrowserReady({ api, url, canOpen }: BrowserReadyPrompt) {
 
     if (again.reopen && canOpen && url) {
       // eslint-disable-next-line no-await-in-loop
-      await openUrl(url);
+      await openBrowserPage(url, {
+        canOpen,
+        browserSession
+      });
     }
   }
 }
 
-async function waitForAppSecretReveal(appId: string, canOpen: boolean) {
+async function waitForAppSecretReveal(appId: string, canOpen: boolean, browserSession?: BrowserReadyPrompt['browserSession']) {
   const appSettingsUrl = `https://developers.facebook.com/apps/${encodeURIComponent(appId)}/settings/basic/`;
   if (canOpen) {
     console.log(chalk.gray('\nOpening your app Basic settings page...'));
-    const opened = await openUrl(appSettingsUrl);
+    const opened = await openBrowserPage(appSettingsUrl, {
+      canOpen,
+      browserSession
+    });
     if (!opened) {
       console.log(chalk.yellow('Could not auto-open browser. Open this URL manually:'));
     }
@@ -167,9 +266,74 @@ async function waitForAppSecretReveal(appId: string, canOpen: boolean) {
 
     if (reopen.again && canOpen) {
       // eslint-disable-next-line no-await-in-loop
-      await openUrl(appSettingsUrl);
+      await openBrowserPage(appSettingsUrl, {
+        canOpen,
+        browserSession
+      });
     }
   }
+}
+
+async function collectAppCredentials(options: {
+  id?: string;
+  secret?: string;
+  open?: boolean;
+  browserSession?: BrowserReadyPrompt['browserSession'];
+}) {
+  let { id, secret } = options;
+  const canOpen = options.open !== false;
+  const appsUrl = 'https://developers.facebook.com/apps/';
+
+  if (!id || !secret) {
+    if (canOpen) {
+      console.log(chalk.gray('\nOpening Meta App Dashboard...'));
+      const opened = await openBrowserPage(appsUrl, {
+        canOpen,
+        browserSession: options.browserSession
+      });
+      if (!opened) {
+        console.log(chalk.yellow('Could not auto-open browser. Open this URL manually:'));
+      }
+      if (options.browserSession && options.browserSession.via === 'browser-agent') {
+        console.log(chalk.gray('  Browser agent is ready. Login there if needed, then continue here.'));
+      }
+    } else {
+      console.log(chalk.gray('\nMeta App Dashboard URL:'));
+    }
+
+    console.log(chalk.cyan(`  ${appsUrl}`));
+    console.log(chalk.gray('  Steps: Login if needed -> select your app -> Settings -> Basic -> copy App ID.\n'));
+
+    if (!id) {
+      const answers = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'appId',
+          message: 'Enter your App ID:',
+          validate: (input: string) => input.length > 0 || 'App ID cannot be empty'
+        }
+      ]);
+      id = answers.appId;
+    }
+
+    if (!secret) {
+      await waitForAppSecretReveal(String(id || '').trim(), canOpen, options.browserSession);
+      const answers = await inquirer.prompt([
+        {
+          type: 'password',
+          name: 'appSecret',
+          message: 'Enter your App Secret:',
+          validate: (input: string) => input.length > 0 || 'App Secret cannot be empty'
+        }
+      ]);
+      secret = answers.appSecret;
+    }
+  }
+
+  return {
+    appId: String(id || '').trim(),
+    appSecret: String(secret || '').trim()
+  };
 }
 
 function registerAuthCommands(program: any) {
@@ -191,14 +355,16 @@ function registerAuthCommands(program: any) {
 
   auth
     .command('login')
-    .description('Login and store an access token (manual or OAuth)')
+    .description('Login and store an access token (auto OAuth when app credentials exist, otherwise guided/manual)')
     .option('-a, --api <api>', 'API to authenticate (facebook, instagram, whatsapp)', 'facebook')
     .option('-t, --token <token>', 'Access token (prompts if not provided)')
-    .option('--oauth', 'Use OAuth browser flow (requires app id/secret and valid redirect URI)')
+    .option('--oauth', 'Force OAuth browser flow (requires app id/secret and valid redirect URI)')
+    .option('--manual', 'Always use manual token entry even if OAuth app credentials exist')
     .option('--scopes', 'Prompt for scopes (used for OAuth or guidance)')
     .option('--scope <scopes>', 'Comma-separated scopes (overrides --scopes)')
     .option('--long-lived', 'Exchange for long-lived token (OAuth only; requires app secret)')
     .option('--no-open', 'Do not open the token page in your browser')
+    .option('--no-browser-agent', 'Disable the Playwright browser assistant and use the system browser instead')
     .action(async (options: AuthLoginOptions) => {
       const api = options.api;
       if (!isValidApi(api)) {
@@ -219,96 +385,164 @@ function registerAuthCommands(program: any) {
       }
 
       let token = options.token || '';
+      let browserSession: Awaited<ReturnType<typeof createBrowserAssistSession>> | null = null;
+      let browserAgentAnnounced = false;
 
-      if (options.oauth) {
-        const { appId, appSecret } = config.getAppCredentials();
-        if (!appId || !appSecret) {
-          console.error(chalk.red('X Missing app credentials. Run: social auth app'));
-          process.exit(1);
+      const ensureBrowserSession = async () => {
+        if (options.open === false) return null;
+        if (browserSession) return browserSession;
+        browserSession = await createBrowserAssistSession({
+          browserAgent: options.browserAgent !== false
+        });
+        if (browserSession && browserSession.via === 'browser-agent' && !browserAgentAnnounced) {
+          console.log(chalk.gray('\nBrowser agent launched a dedicated auth window.\n'));
+          browserAgentAnnounced = true;
+        }
+        return browserSession;
+      };
+
+      try {
+        let { appId, appSecret } = config.getAppCredentials();
+        let flow = resolveLoginFlow({
+          api,
+          token,
+          oauth: options.oauth,
+          manual: options.manual,
+          hasAppCredentials: Boolean(appId && appSecret)
+        });
+
+        if (flow.shouldPromptForAppSetup && !token) {
+          const answers = await inquirer.prompt([
+            {
+              type: 'confirm',
+              name: 'configureApp',
+              default: true,
+              message: 'Automatic token capture needs Meta app credentials. Configure them now and continue?'
+            }
+          ]);
+
+          if (answers.configureApp) {
+            const session = await ensureBrowserSession();
+            const collected = await collectAppCredentials({
+              open: options.open,
+              browserSession: session
+            });
+            appId = collected.appId;
+            appSecret = collected.appSecret;
+            config.setAppCredentials(appId, appSecret);
+            console.log(chalk.green('OK App credentials saved'));
+            console.log('');
+            flow = resolveLoginFlow({
+              api,
+              token,
+              oauth: true,
+              manual: options.manual,
+              hasAppCredentials: Boolean(appId && appSecret)
+            });
+          } else if (options.oauth) {
+            console.error(chalk.red('X OAuth requested, but app credentials were not configured.'));
+            process.exit(1);
+          }
         }
 
-        console.log(chalk.gray('\nStarting OAuth flow...'));
-        console.log(chalk.gray('  Note: Your Meta app must allow the redirect URI shown in your browser.\n'));
+        if (flow.mode === 'oauth' && !token) {
+          if (!appId || !appSecret) {
+            console.error(chalk.red('X Missing app credentials. Run: social auth app'));
+            process.exit(1);
+          }
 
-        try {
-          const tokenData = await oauthLogin({
-            apiVersion,
-            appId,
-            appSecret,
-            scopes
-          });
+          console.log(chalk.gray('\nStarting OAuth flow...'));
+          console.log(chalk.gray('  Note: Your Meta app must allow the redirect URI shown in your browser.\n'));
 
-          token = tokenData.access_token;
-
-          if (options.longLived) {
-            const exchanged = await exchangeForLongLivedToken({
+          try {
+            const tokenData = await oauthLogin({
               apiVersion,
               appId,
               appSecret,
-              shortLivedToken: token
+              scopes,
+              browserSession: await ensureBrowserSession()
             });
-            token = exchanged.access_token;
+
+            token = tokenData.access_token;
+
+            if (options.longLived) {
+              const exchanged = await exchangeForLongLivedToken({
+                apiVersion,
+                appId,
+                appSecret,
+                shortLivedToken: token
+              });
+              token = exchanged.access_token;
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error(chalk.red(`X OAuth failed: ${message}`));
+            process.exit(1);
           }
+        }
+
+        if (!token) {
+          const url = tokenHelpUrl(api, apiVersion);
+          if (api === 'whatsapp') {
+            console.log(chalk.gray('\nWhatsApp token hint:'));
+            console.log(chalk.cyan('  Meta App Dashboard -> WhatsApp -> API Setup -> Generate access token'));
+            console.log(chalk.gray('  Then paste the token below.\n'));
+          } else if (url) {
+            if (options.open !== false) {
+              console.log(chalk.gray(`\nOpening ${api} token page...`));
+              console.log(chalk.cyan(`  ${url}\n`));
+              await openBrowserPage(url, {
+                canOpen: options.open !== false,
+                browserSession: await ensureBrowserSession()
+              });
+            } else {
+              console.log(chalk.gray(`\nToken page (${api}):`));
+              console.log(chalk.cyan(`  ${url}\n`));
+            }
+
+            await confirmBrowserReady({
+              api,
+              url,
+              canOpen: options.open !== false,
+              browserSession: await ensureBrowserSession()
+            });
+          }
+
+          const answers = await inquirer.prompt([
+            {
+              type: 'password',
+              name: 'token',
+              message: `Enter your ${api} access token:`,
+              validate: (input: string) => input.length > 0 || 'Token cannot be empty'
+            }
+          ]);
+          token = answers.token;
+        }
+
+        const spinner = ora('Validating token...').start();
+        try {
+          const client = new MetaAPIClient(token, api);
+          const me = await client.getMe('id,name');
+          spinner.stop();
+
+          config.setToken(api, token);
+          config.setDefaultApi(api);
+
+          console.log(chalk.green('OK Authenticated'));
+          console.log(chalk.gray(`  User: ${me.name || me.id}`));
+          console.log(chalk.gray(`  API: ${api}`));
+          console.log(chalk.gray(`  Version: ${apiVersion}`));
+          if (scopes.length) console.log(chalk.gray(`  Scopes requested: ${scopes.join(', ')}`));
+          console.log('');
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.error(chalk.red(`X OAuth failed: ${message}`));
-          process.exit(1);
+          spinner.stop();
+          const client = new MetaAPIClient(token, api);
+          client.handleError(error);
         }
-      }
-
-      if (!token) {
-        const url = tokenHelpUrl(api, apiVersion);
-        if (api === 'whatsapp') {
-          console.log(chalk.gray('\nWhatsApp token hint:'));
-          console.log(chalk.cyan('  Meta App Dashboard -> WhatsApp -> API Setup -> Generate access token'));
-          console.log(chalk.gray('  Then paste the token below.\n'));
-        } else if (url) {
-          if (options.open !== false) {
-            console.log(chalk.gray(`\nOpening ${api} token page...`));
-            console.log(chalk.cyan(`  ${url}\n`));
-            await openUrl(url);
-          } else {
-            console.log(chalk.gray(`\nToken page (${api}):`));
-            console.log(chalk.cyan(`  ${url}\n`));
-          }
-
-          await confirmBrowserReady({
-            api,
-            url,
-            canOpen: options.open !== false
-          });
+      } finally {
+        if (browserSession && typeof browserSession.close === 'function') {
+          await browserSession.close();
         }
-
-        const answers = await inquirer.prompt([
-          {
-            type: 'password',
-            name: 'token',
-            message: `Enter your ${api} access token:`,
-            validate: (input: string) => input.length > 0 || 'Token cannot be empty'
-          }
-        ]);
-        token = answers.token;
-      }
-
-      const spinner = ora('Validating token...').start();
-      try {
-        const client = new MetaAPIClient(token, api);
-        const me = await client.getMe('id,name');
-        spinner.stop();
-
-        config.setToken(api, token);
-        config.setDefaultApi(api);
-
-        console.log(chalk.green('OK Authenticated'));
-        console.log(chalk.gray(`  User: ${me.name || me.id}`));
-        console.log(chalk.gray(`  API: ${api}`));
-        console.log(chalk.gray(`  Version: ${apiVersion}`));
-        if (scopes.length) console.log(chalk.gray(`  Scopes requested: ${scopes.join(', ')}`));
-        console.log('');
-      } catch (error) {
-        spinner.stop();
-        const client = new MetaAPIClient(token, api);
-        client.handleError(error);
       }
     });
 
@@ -318,53 +552,34 @@ function registerAuthCommands(program: any) {
     .option('--id <appId>', 'App ID')
     .option('--secret <appSecret>', 'App Secret')
     .option('--no-open', 'Do not open Meta App Dashboard in browser')
+    .option('--no-browser-agent', 'Disable the Playwright browser assistant and use the system browser instead')
     .action(async (options: AuthAppOptions) => {
-      let { id, secret } = options;
-
-      if (!id || !secret) {
-        const appsUrl = 'https://developers.facebook.com/apps/';
+      let browserSession: Awaited<ReturnType<typeof createBrowserAssistSession>> | null = null;
+      try {
         if (options.open !== false) {
-          console.log(chalk.gray('\nOpening Meta App Dashboard...'));
-          const opened = await openUrl(appsUrl);
-          if (!opened) {
-            console.log(chalk.yellow('Could not auto-open browser. Open this URL manually:'));
+          browserSession = await createBrowserAssistSession({
+            browserAgent: options.browserAgent !== false
+          });
+          if (browserSession && browserSession.via === 'browser-agent') {
+            console.log(chalk.gray('\nBrowser agent launched a dedicated auth window.\n'));
           }
-        } else {
-          console.log(chalk.gray('\nMeta App Dashboard URL:'));
         }
 
-        console.log(chalk.cyan(`  ${appsUrl}`));
-        console.log(chalk.gray('  Steps: Select your app -> Settings -> Basic -> copy App ID.\n'));
+        const collected = await collectAppCredentials({
+          id: options.id,
+          secret: options.secret,
+          open: options.open,
+          browserSession
+        });
 
-        if (!id) {
-          const answers = await inquirer.prompt([
-            {
-              type: 'input',
-              name: 'appId',
-              message: 'Enter your App ID:',
-              validate: (input: string) => input.length > 0 || 'App ID cannot be empty'
-            }
-          ]);
-          id = answers.appId;
-        }
-
-        if (!secret) {
-          await waitForAppSecretReveal(String(id || '').trim(), options.open !== false);
-          const answers = await inquirer.prompt([
-            {
-              type: 'password',
-              name: 'appSecret',
-              message: 'Enter your App Secret:',
-              validate: (input: string) => input.length > 0 || 'App Secret cannot be empty'
-            }
-          ]);
-          secret = answers.appSecret;
+        config.setAppCredentials(collected.appId, collected.appSecret);
+        console.log(chalk.green('OK App credentials saved'));
+        console.log('');
+      } finally {
+        if (browserSession && typeof browserSession.close === 'function') {
+          await browserSession.close();
         }
       }
-
-      config.setAppCredentials(id, secret);
-      console.log(chalk.green('OK App credentials saved'));
-      console.log('');
     });
 
   auth
@@ -424,5 +639,10 @@ function registerAuthCommands(program: any) {
       config.display();
     });
 }
+
+(registerAuthCommands as any)._private = {
+  resolveLoginFlow,
+  supportsAutomaticOauth
+};
 
 export = registerAuthCommands;

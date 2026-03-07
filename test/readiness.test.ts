@@ -109,6 +109,29 @@ module.exports = [
     }
   },
   {
+    name: 'gateway manager treats legacy studio 404 payload as unavailable',
+    fn: () => {
+      const unavailable = gatewayManager._private.isStudioRouteUnavailable({
+        status: 404,
+        body: JSON.stringify({
+          ok: false,
+          error: 'Bundled Studio frontend is not installed. Add a build to assets/studio or set SOCIAL_STUDIO_ASSET_DIR(S), then open /studio/app.'
+        })
+      });
+      assert.equal(unavailable, true);
+    }
+  },
+  {
+    name: 'gateway manager accepts healthy studio app route probe',
+    fn: () => {
+      const unavailable = gatewayManager._private.isStudioRouteUnavailable({
+        status: 200,
+        body: '<!doctype html><html><body>Social Flow Studio</body></html>'
+      });
+      assert.equal(unavailable, false);
+    }
+  },
+  {
     name: 'gateway manager does not replace non-social service on same port',
     fn: () => {
       const decision = gatewayManager._private.shouldReplaceExternalGateway(

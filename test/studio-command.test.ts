@@ -56,10 +56,10 @@ module.exports = [
     }
   },
   {
-    name: 'studio launch target defaults to bundled app when no frontend override is supplied',
+    name: 'studio launch target defaults to studio app when no frontend override is supplied',
     fn: () => {
-      const result = studio._private.pickStudioLaunchUrl('', 'http://127.0.0.1:1310/studio/app');
-      assert.equal(result, 'http://127.0.0.1:1310/studio/app');
+      const result = studio._private.pickStudioLaunchUrl('', 'http://127.0.0.1:1310/studio/app/');
+      assert.equal(result, 'http://127.0.0.1:1310/studio/app/');
     }
   },
   {
@@ -67,13 +67,13 @@ module.exports = [
     fn: () => {
       const result = studio._private.pickStudioLaunchUrl(
         'http://127.0.0.1:4173',
-        'http://127.0.0.1:1310/studio/app'
+        'http://127.0.0.1:1310/studio/app/'
       );
       assert.equal(result, 'http://127.0.0.1:4173');
     }
   },
   {
-    name: 'studio route recovery triggers when gateway health is ok but bundled route is missing',
+    name: 'studio route recovery triggers when gateway health is ok but studio app route is missing',
     fn: () => {
       const result = studio._private.studioRouteNeedsRecovery(
         { status: 200, data: { ok: true } },
@@ -83,7 +83,7 @@ module.exports = [
     }
   },
   {
-    name: 'studio route recovery does not trigger when bundled route responds 200',
+    name: 'studio route recovery does not trigger when studio app route responds 200',
     fn: () => {
       const result = studio._private.studioRouteNeedsRecovery(
         { status: 200, data: { ok: true } },

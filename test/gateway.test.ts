@@ -179,7 +179,7 @@ module.exports = [
         assert.equal(root.status, 410);
         assert.equal(String(root.headers['content-type'] || '').includes('application/json'), true);
         assert.equal(
-          String(root.raw || '').includes('/studio/app for bundled Studio UI'),
+          String(root.raw || '').includes('Open /studio or /studio/app/ for Studio'),
           true
         );
 
@@ -197,7 +197,7 @@ module.exports = [
     }
   },
   {
-    name: 'gateway studio route serves switcher shell',
+    name: 'gateway studio route redirects to studio app',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
@@ -209,11 +209,8 @@ module.exports = [
           method: 'GET',
           pathName: '/studio'
         });
-        assert.equal(studio.status, 200);
-        assert.equal(String(studio.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(studio.raw || '').includes('Studio Switcher'), true);
-        assert.equal(String(studio.raw || '').includes('/studio/app'), true);
-        assert.equal(String(studio.raw || '').includes('/studio/full/'), true);
+        assert.equal(studio.status, 302);
+        assert.equal(String(studio.headers.location || ''), '/studio/app/');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
@@ -221,79 +218,10 @@ module.exports = [
     }
   },
   {
-    name: 'gateway studio context alias serves switcher shell',
+    name: 'gateway studio app route redirects to trailing slash',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
-      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
-      try {
-        await server.start();
-        const studio = await requestRaw({
-          port: server.port,
-          method: 'GET',
-          pathName: '/studio/context'
-        });
-        assert.equal(studio.status, 200);
-        assert.equal(String(studio.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(studio.raw || '').includes('Studio Switcher'), true);
-      } finally {
-        await server.stop();
-        process.env.META_CLI_HOME = oldHome;
-      }
-    }
-  },
-  {
-    name: 'gateway studio full route redirects to trailing slash',
-    fn: async () => {
-      const oldHome = process.env.META_CLI_HOME;
-      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
-      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
-      try {
-        await server.start();
-        const full = await requestRaw({
-          port: server.port,
-          method: 'GET',
-          pathName: '/studio/full'
-        });
-        assert.equal(full.status, 302);
-        assert.equal(String(full.headers.location || ''), '/studio/full/');
-      } finally {
-        await server.stop();
-        process.env.META_CLI_HOME = oldHome;
-      }
-    }
-  },
-  {
-    name: 'gateway studio full route serves licensed function-calling frontend',
-    fn: async () => {
-      const oldHome = process.env.META_CLI_HOME;
-      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
-      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
-      try {
-        await server.start();
-        const full = await requestRaw({
-          port: server.port,
-          method: 'GET',
-          pathName: '/studio/full/'
-        });
-        assert.equal(full.status, 200);
-        assert.equal(String(full.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(full.raw || '').includes('Social Flow Agentic Frontend Screens'), true);
-      } finally {
-        await server.stop();
-        process.env.META_CLI_HOME = oldHome;
-      }
-    }
-  },
-  {
-    name: 'gateway bundled studio app route serves static frontend',
-    fn: async () => {
-      const oldHome = process.env.META_CLI_HOME;
-      const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
-      const oldDisableBundled = process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
-      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
-      process.env.SOCIAL_STUDIO_ASSET_DIRS = path.resolve(process.cwd(), 'docs', 'agentic-frontend');
-      process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = '1';
       const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
       try {
         await server.start();
@@ -302,25 +230,41 @@ module.exports = [
           method: 'GET',
           pathName: '/studio/app'
         });
-        assert.equal(app.status, 200);
-        assert.equal(String(app.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(app.raw || '').includes('Social Flow Agentic Frontend Screens'), true);
+        assert.equal(app.status, 302);
+        assert.equal(String(app.headers.location || ''), '/studio/app/');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
-        if (oldStudioDirs === undefined) delete process.env.SOCIAL_STUDIO_ASSET_DIRS;
-        else process.env.SOCIAL_STUDIO_ASSET_DIRS = oldStudioDirs;
-        if (oldDisableBundled === undefined) delete process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
-        else process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = oldDisableBundled;
       }
     }
   },
   {
-    name: 'gateway bundled studio app route works when cwd is outside repo root',
+    name: 'gateway studio app route serves working frontend by default',
+    fn: async () => {
+      const oldHome = process.env.META_CLI_HOME;
+      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
+      try {
+        await server.start();
+        const app = await requestRaw({
+          port: server.port,
+          method: 'GET',
+          pathName: '/studio/app/'
+        });
+        assert.equal(app.status, 200);
+        assert.equal(String(app.headers['content-type'] || '').includes('text/html'), true);
+        assert.equal(String(app.raw || '').includes('Social Flow Studio'), true);
+      } finally {
+        await server.stop();
+        process.env.META_CLI_HOME = oldHome;
+      }
+    }
+  },
+  {
+    name: 'gateway studio app route works when cwd is outside repo root',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
-      const oldDisableBundled = process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
       const oldCwd = process.cwd();
       const externalCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-cwd-'));
       const externalStudioDir = path.join(externalCwd, 'studio-assets');
@@ -331,12 +275,11 @@ module.exports = [
       try {
         process.chdir(externalCwd);
         process.env.SOCIAL_STUDIO_ASSET_DIRS = externalStudioDir;
-        process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = '1';
         await server.start();
         const app = await requestRaw({
           port: server.port,
           method: 'GET',
-          pathName: '/studio/app'
+          pathName: '/studio/app/'
         });
         assert.equal(app.status, 200);
         assert.equal(String(app.headers['content-type'] || '').includes('text/html'), true);
@@ -348,39 +291,39 @@ module.exports = [
         process.env.META_CLI_HOME = oldHome;
         if (oldStudioDirs === undefined) delete process.env.SOCIAL_STUDIO_ASSET_DIRS;
         else process.env.SOCIAL_STUDIO_ASSET_DIRS = oldStudioDirs;
-        if (oldDisableBundled === undefined) delete process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
-        else process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = oldDisableBundled;
       }
     }
   },
   {
-    name: 'gateway studio app route returns missing-frontend error when bundled assets are disabled',
+    name: 'gateway studio app route returns missing-frontend error when explicit asset roots have no frontend',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
-      const oldDisableBundled = process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
+      const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
+      const emptyStudioDir = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-empty-studio-'));
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
-      process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = '1';
+      process.env.SOCIAL_STUDIO_ASSET_DIRS = emptyStudioDir;
       const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
       try {
         await server.start();
         const app = await requestRaw({
           port: server.port,
           method: 'GET',
-          pathName: '/studio/app'
+          pathName: '/studio/app/'
         });
         assert.equal(app.status, 404);
         assert.equal(String(app.headers['content-type'] || '').includes('application/json'), true);
-        assert.equal(String(app.raw || '').includes('Bundled Studio frontend is not installed'), true);
+        assert.equal(String(app.raw || '').includes('Studio app frontend is not installed'), true);
       } finally {
         await server.stop();
+        fs.rmSync(emptyStudioDir, { recursive: true, force: true });
         process.env.META_CLI_HOME = oldHome;
-        if (oldDisableBundled === undefined) delete process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
-        else process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = oldDisableBundled;
+        if (oldStudioDirs === undefined) delete process.env.SOCIAL_STUDIO_ASSET_DIRS;
+        else process.env.SOCIAL_STUDIO_ASSET_DIRS = oldStudioDirs;
       }
     }
   },
   {
-    name: 'gateway studio route is reserved even when static asset roots are configured',
+    name: 'gateway studio route keeps redirect behavior even when static asset roots are configured',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
@@ -394,9 +337,8 @@ module.exports = [
           method: 'GET',
           pathName: '/studio'
         });
-        assert.equal(studio.status, 200);
-        assert.equal(String(studio.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(studio.raw || '').includes('Studio Switcher'), true);
+        assert.equal(studio.status, 302);
+        assert.equal(String(studio.headers.location || ''), '/studio/app/');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;

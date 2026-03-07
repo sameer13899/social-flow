@@ -346,9 +346,11 @@ function isStudioRouteUnavailable(probe = {}) {
   const status = Number(probe.status || 0);
   const body = String(probe.body || '');
   const normalized = body.toLowerCase();
-  if (normalized.includes('bundled studio frontend is disabled')) return true;
-  if (status === 404 && body.includes('Route not found')) return true;
-  if (status === 410 && normalized.includes('bundled studio frontend is disabled')) return true;
+  // `/studio/app/` is expected to return the working Studio HTML directly.
+  // Any other status means the process on the port is not serving the usable UI.
+  if (status !== 200) return true;
+  if (normalized.includes('studio app frontend is not installed')) return true;
+  if (normalized.includes('bundled studio frontend is not installed')) return true;
   return false;
 }
 
@@ -424,7 +426,7 @@ async function startGatewayBackground(options = {}) {
   if (existingHealth.ok) {
     let studioRouteOk = true;
     if (isSocialGatewayHealth(existingHealth) && options.requireStudioRoute === true) {
-      const studioProbe = await fetchPath(host, port, '/studio/app', 1400);
+      const studioProbe = await fetchPath(host, port, '/studio/app/', 1400);
       if (isStudioRouteUnavailable(studioProbe)) studioRouteOk = false;
     }
     replaceDecision = shouldReplaceExternalGateway(existingHealth, {
@@ -485,11 +487,7 @@ async function startGatewayBackground(options = {}) {
   const child = spawn(process.execPath, commandArgs, {
     detached: true,
     stdio: ['ignore', outFd, outFd],
-    env: {
-      ...process.env,
-      SOCIAL_STUDIO_FORCE_BUNDLED: '1',
-      SOCIAL_STUDIO_DISABLE_BUNDLED: '0'
-    },
+    env: process.env,
     windowsHide: true
   });
   child.unref();
@@ -587,6 +585,7 @@ module.exports = {
   _private: {
     shouldReplaceExternalGateway,
     portFromEndpoint,
-    listeningPidsForPort
+    listeningPidsForPort,
+    isStudioRouteUnavailable
   }
 };

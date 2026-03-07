@@ -8,7 +8,8 @@ This handoff captures the current TypeScript migration status and release readin
 
 ### Studio Approval-First + Launcher Recovery
 
-- Bundled Studio UI was restored at `assets/studio/index.html` as the main execution surface.
+- Gateway now serves `docs/agentic-frontend/` as the single Studio frontend at `/studio/app/`.
+- `/studio` is the only human-facing entry route and redirects to `/studio/app/`.
 - Studio prompt flow is now approval-first:
   - prompt plans first
   - agent waits for explicit `yes` / `no`
@@ -129,15 +130,15 @@ This handoff captures the current TypeScript migration status and release readin
   - returns recommended next actions per ad
 - Added examples in global help and README.
 
-### Bundled Studio Frontend Removal (Explicit)
+### Studio Frontend Removal (Explicit)
 
-- Deleted bundled frontend assets:
-  - `assets/studio/*`
+- Deleted legacy frontend assets:
+  - legacy Studio bundle files
 - Gateway root (`/`) no longer serves UI and now returns disabled/deprecated response.
 - `social studio` command now opens:
   - external frontend if provided, or
   - gateway status endpoint (`/api/status?doctor=1`)
-- Help/docs strings were updated to remove bundled Studio UI claims.
+- Help/docs strings were updated to remove retired Studio route claims.
 
 ### Files Touched in This Update
 
@@ -246,7 +247,7 @@ Priority order for reducing friction and improving beginner usability across ter
 
 - Updated gateway tests and smoke checks to match current product behavior:
   - `GET /` returns `410` with JSON deprecation response.
-  - bundled static Studio assets are not served.
+  - only the Studio app route is served.
 
 ### Package Footprint Reduction
 
