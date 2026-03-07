@@ -385,11 +385,12 @@ function registerAuthCommands(program: any) {
       }
 
       let token = options.token || '';
+      const canOpen = options.open !== false;
       let browserSession: Awaited<ReturnType<typeof createBrowserAssistSession>> | null = null;
       let browserAgentAnnounced = false;
 
       const ensureBrowserSession = async () => {
-        if (options.open === false) return null;
+        if (!canOpen) return null;
         if (browserSession) return browserSession;
         browserSession = await createBrowserAssistSession({
           browserAgent: options.browserAgent !== false
@@ -488,11 +489,11 @@ function registerAuthCommands(program: any) {
             console.log(chalk.cyan('  Meta App Dashboard -> WhatsApp -> API Setup -> Generate access token'));
             console.log(chalk.gray('  Then paste the token below.\n'));
           } else if (url) {
-            if (options.open !== false) {
+            if (canOpen) {
               console.log(chalk.gray(`\nOpening ${api} token page...`));
               console.log(chalk.cyan(`  ${url}\n`));
               await openBrowserPage(url, {
-                canOpen: options.open !== false,
+                canOpen,
                 browserSession: await ensureBrowserSession()
               });
             } else {
@@ -503,7 +504,7 @@ function registerAuthCommands(program: any) {
             await confirmBrowserReady({
               api,
               url,
-              canOpen: options.open !== false,
+              canOpen,
               browserSession: await ensureBrowserSession()
             });
           }
