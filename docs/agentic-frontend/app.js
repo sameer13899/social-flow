@@ -35,7 +35,9 @@ const state = {
   chatSessionId: "",
   pendingActions: [],
   ws: null,
-  wsEvents: []
+  wsEvents: [],
+  setupSnapshot: null,
+  setupDraftInitialized: false
 };
 
 const $ = (id) => document.getElementById(id);
@@ -107,6 +109,22 @@ const nodes = {
   generateHandoff: $("generate-handoff"),
   launchpadReadiness: $("launchpad-readiness"),
   launchpadOutput: $("launchpad-output"),
+
+  setupMetrics: $("setup-metrics"),
+  setupChecklist: $("setup-checklist"),
+  setupDefaultApi: $("setup-default-api"),
+  setupFacebookToken: $("setup-facebook-token"),
+  setupInstagramToken: $("setup-instagram-token"),
+  setupWhatsappToken: $("setup-whatsapp-token"),
+  setupAppId: $("setup-app-id"),
+  setupAppSecret: $("setup-app-secret"),
+  setupAgentProvider: $("setup-agent-provider"),
+  setupAgentModel: $("setup-agent-model"),
+  setupAgentApiKey: $("setup-agent-api-key"),
+  setupSave: $("setup-save"),
+  setupFinish: $("setup-finish"),
+  setupReload: $("setup-reload"),
+  setupOutput: $("setup-output"),
 
   keyService: $("key-service"),
   keyLabel: $("key-label"),
@@ -324,6 +342,268 @@ async function requestApi(pathname, { method = "GET", body = null } = {}) {
 function errorText(error, fallback = "Request failed") {
   return String(error?.payload?.error || error?.message || fallback);
 }
+
+function defaultAgentModel(provider) {
+  const normalized = String(provider || "openai").trim().toLowerCase();
+  if (normalized === "anthropic") return "claude-3-5-sonnet-latest";
+  if (normalized === "openrouter") return "openai/gpt-4o-mini";
+  if (normalized === "xai") return "grok-2-latest";
+  if (normalized === "gemini") return "gemini-1.5-pro";
+  return "gpt-4o-mini";
+}
+
+function writeSetupOutput(title, payload) {
+  nodes.setupOutput.textContent = `${title}\n\n${pretty(payload)}`;
+}
+
+function makeMetricCard(label, value) {
+  const card = document.createElement("article");
+  card.className = "metric-card";
+  const labelNode = document.createElement("p");
+  labelNode.className = "metric-label";
+  labelNode.textContent = label;
+  const valueNode = document.createElement("p");
+  valueNode.className = "metric-value";
+  valueNode.textContent = value;
+  card.appendChild(labelNode);
+  card.appendChild(valueNode);
+  return card;
+}
+
+function setupSecretPlaceholder(prefix, configured, preview = "") {
+  if (configured) {
+    return preview ? `${prefix} saved (${preview}). Paste a new value to replace it.` : `${prefix} saved. Paste a new value to replace it.`;
+  }
+  return `Paste ${prefix.toLowerCase()}`;
+}
+
+function populateSetupForm(snapshot, { force = false } = {}) {
+  const cfg = snapshot?.config || {};
+  if (!force && state.setupDraftInitialized) return;
+  nodes.setupDefaultApi.value = String(cfg.defaultApi || "facebook");
+  nodes.setupAppId.value = String(cfg?.app?.appId || "");
+  const provider = String(cfg?.agent?.provider || "openai");
+  nodes.setupAgentProvider.value = provider;
+  nodes.setupAgentProvider.dataset.lastProvider = provider;
+  nodes.setupAgentModel.value = String(cfg?.agent?.model || defaultAgentModel(provider));
+  state.setupDraftInitialized = true;
+}
+
+function clearSetupSensitiveInputs() {
+  nodes.setupFacebookToken.value = "";
+  nodes.setupInstagramToken.value = "";
+  nodes.setupWhatsappToken.value = "";
+  nodes.setupAppSecret.value = "";
+  nodes.setupAgentApiKey.value = "";
+}
+
+function applySetupPlaceholders(snapshot) {
+  const cfg = snapshot?.config || {};
+  nodes.setupFacebookToken.placeholder = setupSecretPlaceholder(
+    "Facebook token",
+    Boolean(cfg?.tokens?.facebook?.configured),
+    String(cfg?.tokens?.facebook?.preview || "")
+  );
+  nodes.setupInstagramToken.placeholder = setupSecretPlaceholder(
+    "Instagram token",
+    Boolean(cfg?.tokens?.instagram?.configured),
+    String(cfg?.tokens?.instagram?.preview || "")
+  );
+  nodes.setupWhatsappToken.placeholder = setupSecretPlaceholder(
+    "WhatsApp token",
+    Boolean(cfg?.tokens?.whatsapp?.configured),
+    String(cfg?.tokens?.whatsapp?.preview || "")
+  );
+  nodes.setupAppSecret.placeholder = setupSecretPlaceholder(
+    "App Secret",
+    Boolean(cfg?.app?.appSecretConfigured)
+  );
+  nodes.setupAgentApiKey.placeholder = setupSecretPlaceholder(
+    "Agent API key",
+    Boolean(cfg?.agent?.apiKeyConfigured)
+  );
+}
+
+function renderSetupMetrics(snapshot) {
+  const report = snapshot?.readiness || {};
+  const cfg = snapshot?.config || {};
+  const blockers = Array.isArray(report.blockers) ? report.blockers : [];
+  const warnings = Array.isArray(report.warnings) ? report.warnings : [];
+  const tracksReady = [
+    Boolean(cfg?.tokens?.[cfg?.defaultApi || "facebook"]?.configured),
+    Boolean(cfg?.app?.appId) && Boolean(cfg?.app?.appSecretConfigured),
+    Boolean(cfg?.agent?.apiKeyConfigured),
+    Boolean(cfg?.onboarding?.completed)
+  ].filter(Boolean).length;
+
+  nodes.setupMetrics.innerHTML = "";
+  [
+    { label: "Core Setup", value: report.ok ? "Ready" : "Action" },
+    { label: "Blockers", value: String(blockers.length) },
+    { label: "Warnings", value: String(warnings.length) },
+    { label: "Tracks Ready", value: `${tracksReady}/4` }
+  ].forEach((item) => nodes.setupMetrics.appendChild(makeMetricCard(item.label, item.value)));
+}
+
+function renderSetupChecklist(snapshot) {
+  const cfg = snapshot?.config || {};
+  const report = snapshot?.readiness || {};
+  const blockers = Array.isArray(report.blockers) ? report.blockers : [];
+  const warnings = Array.isArray(report.warnings) ? report.warnings : [];
+  const defaultApi = String(cfg.defaultApi || "facebook");
+
+  const rows = [
+    {
+      title: `Default ${defaultApi} token`,
+      meta: cfg?.tokens?.[defaultApi]?.configured ? "READY" : "ACTION",
+      body: cfg?.tokens?.[defaultApi]?.configured
+        ? `Saved ${cfg.tokens[defaultApi].preview || "token"} for the active API.`
+        : `Paste a ${defaultApi} token so the agent can act without env vars.`
+    },
+    {
+      title: "Meta app credentials",
+      meta: cfg?.app?.appId && cfg?.app?.appSecretConfigured ? "READY" : "RECOMMENDED",
+      body: cfg?.app?.appId
+        ? `App ID ${cfg.app.appId}${cfg.app.appSecretConfigured ? " with secret saved." : " saved, but App Secret is still missing."}`
+        : "Save App ID and App Secret to unlock OAuth and advanced diagnostics."
+    },
+    {
+      title: "Agent AI provider",
+      meta: cfg?.agent?.apiKeyConfigured ? "READY" : "ACTION",
+      body: cfg?.agent?.apiKeyConfigured
+        ? `${cfg.agent.provider || "openai"} is configured for Copilot${cfg.agent.model ? ` using ${cfg.agent.model}` : ""}.`
+        : `Save a ${cfg?.agent?.provider || "openai"} API key so non-technical users can use Copilot without env vars.`
+    },
+    {
+      title: "Onboarding state",
+      meta: cfg?.onboarding?.completed ? "COMPLETE" : "PENDING",
+      body: cfg?.onboarding?.completed
+        ? `Marked complete${cfg?.onboarding?.completedAt ? ` at ${cfg.onboarding.completedAt}` : ""}.`
+        : "Save required setup, then use Save + Finish Setup to mark onboarding complete."
+    }
+  ];
+
+  blockers.forEach((item) => {
+    rows.push({
+      title: `Blocker: ${item.code || "setup"}`,
+      meta: "REQUIRED",
+      body: `${item.message || ""}${item.fix ? ` Next: ${item.fix}` : ""}`.trim()
+    });
+  });
+
+  warnings.forEach((item) => {
+    rows.push({
+      title: `Recommended: ${item.code || "warning"}`,
+      meta: "OPTIONAL",
+      body: `${item.message || ""}${item.fix ? ` Next: ${item.fix}` : ""}`.trim()
+    });
+  });
+
+  renderStackList(nodes.setupChecklist, rows, "No setup guidance available.", (row) => makeHostedCard({
+    title: row.title,
+    meta: row.meta,
+    body: row.body
+  }));
+}
+
+function applySetupSnapshot(snapshot, options = {}) {
+  state.setupSnapshot = snapshot;
+  renderSetupMetrics(snapshot);
+  renderSetupChecklist(snapshot);
+  applySetupPlaceholders(snapshot);
+  populateSetupForm(snapshot, { force: Boolean(options.forcePopulate) });
+}
+
+async function loadSetupSnapshot(options = {}) {
+  try {
+    const out = await requestApi("/api/config");
+    applySetupSnapshot(out, options);
+    if (options.writeOutput) writeSetupOutput("Saved setup loaded", out);
+    return out;
+  } catch (error) {
+    nodes.setupChecklist.textContent = `Unable to load setup: ${errorText(error)}`;
+    if (nodes.setupMetrics) {
+      nodes.setupMetrics.innerHTML = "";
+      nodes.setupMetrics.appendChild(makeMetricCard("Core Setup", "Error"));
+    }
+    throw error;
+  }
+}
+
+function buildSetupPayload() {
+  const body = {
+    defaultApi: String(nodes.setupDefaultApi.value || "facebook").trim().toLowerCase(),
+    tokens: {},
+    app: {},
+    agent: {}
+  };
+
+  const facebook = String(nodes.setupFacebookToken.value || "").trim();
+  const instagram = String(nodes.setupInstagramToken.value || "").trim();
+  const whatsapp = String(nodes.setupWhatsappToken.value || "").trim();
+  const appId = String(nodes.setupAppId.value || "").trim();
+  const appSecret = String(nodes.setupAppSecret.value || "").trim();
+  const provider = String(nodes.setupAgentProvider.value || "openai").trim().toLowerCase();
+  const model = String(nodes.setupAgentModel.value || "").trim();
+  const apiKey = String(nodes.setupAgentApiKey.value || "").trim();
+
+  if (facebook) body.tokens.facebook = facebook;
+  if (instagram) body.tokens.instagram = instagram;
+  if (whatsapp) body.tokens.whatsapp = whatsapp;
+  if (appId) body.app.appId = appId;
+  if (appSecret) body.app.appSecret = appSecret;
+  if (provider) body.agent.provider = provider;
+  if (model) body.agent.model = model;
+  if (apiKey) body.agent.apiKey = apiKey;
+
+  return body;
+}
+
+async function saveSetupConfiguration({ markComplete = false } = {}) {
+  const payload = buildSetupPayload();
+  const out = await requestApi("/api/config/update", {
+    method: "POST",
+    body: payload
+  });
+  clearSetupSensitiveInputs();
+  applySetupSnapshot(out, { forcePopulate: true });
+  writeSetupOutput("Setup saved", out);
+
+  if (!markComplete) {
+    toast("Setup saved.", "ok");
+    return out;
+  }
+
+  const report = out?.readiness || {};
+  if (report.ok !== true) {
+    toast("Core setup still has blockers. Finish those before marking onboarding complete.", "err");
+    return out;
+  }
+
+  const finish = await requestApi("/api/config/update", {
+    method: "POST",
+    body: { onboarding: { completed: true } }
+  });
+  applySetupSnapshot(finish, { forcePopulate: true });
+  writeSetupOutput("Setup saved and onboarding completed", finish);
+  toast("Setup saved and onboarding completed.", "ok");
+  await refreshAll();
+  return finish;
+}
+
+function syncSetupModelForProvider(force = false) {
+  const provider = String(nodes.setupAgentProvider.value || "openai").trim().toLowerCase();
+  const previous = String(nodes.setupAgentProvider.dataset.lastProvider || provider);
+  const previousDefault = defaultAgentModel(previous);
+  const nextDefault = defaultAgentModel(provider);
+  const currentModel = String(nodes.setupAgentModel.value || "").trim();
+  if (force || !currentModel || currentModel === previousDefault) {
+    nodes.setupAgentModel.value = nextDefault;
+  }
+  nodes.setupAgentModel.placeholder = nextDefault;
+  nodes.setupAgentProvider.dataset.lastProvider = provider;
+}
+
 function renderReadiness(report) {
   const checks = Array.isArray(report?.checks) ? report.checks : [];
   nodes.readinessList.innerHTML = "";
@@ -1542,6 +1822,7 @@ async function refreshAll() {
     refreshCommandDeck().catch((error) => toast(errorText(error, "Failed to refresh command deck"), "err")),
     loadQueues().catch(() => {}),
     refreshLaunchpadReadiness().catch(() => {}),
+    loadSetupSnapshot().catch(() => {}),
     loadHostedKeys().catch(() => {}),
     loadHostedAgents().catch(() => {}),
     loadHostedTools().catch(() => {}),
@@ -1651,6 +1932,31 @@ function bindEvents() {
   nodes.markOnboarding.addEventListener("click", () => markOnboardingComplete());
   nodes.applyGuard.addEventListener("click", () => applyGuardMode());
   nodes.generateHandoff.addEventListener("click", () => generateHandoffPack());
+
+  nodes.setupSave.addEventListener("click", async () => {
+    try {
+      await saveSetupConfiguration();
+    } catch (error) {
+      toast(errorText(error, "Failed to save setup"), "err");
+    }
+  });
+  nodes.setupFinish.addEventListener("click", async () => {
+    try {
+      await saveSetupConfiguration({ markComplete: true });
+    } catch (error) {
+      toast(errorText(error, "Failed to finish setup"), "err");
+    }
+  });
+  nodes.setupReload.addEventListener("click", async () => {
+    try {
+      clearSetupSensitiveInputs();
+      await loadSetupSnapshot({ forcePopulate: true, writeOutput: true });
+      toast("Saved setup reloaded.", "ok");
+    } catch (error) {
+      toast(errorText(error, "Failed to reload setup"), "err");
+    }
+  });
+  nodes.setupAgentProvider.addEventListener("change", () => syncSetupModelForProvider());
 
   nodes.keySave.addEventListener("click", () => saveHostedKey());
   nodes.keyReload.addEventListener("click", () => loadHostedKeys());

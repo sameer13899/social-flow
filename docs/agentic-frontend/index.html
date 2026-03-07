@@ -38,6 +38,7 @@
         <button type="button" class="screen-link" data-screen-target="approvals">Approvals Center</button>
         <button type="button" class="screen-link" data-screen-target="diagnose">Ads Diagnosis</button>
         <button type="button" class="screen-link" data-screen-target="launchpad">Ops Launchpad</button>
+        <button type="button" class="screen-link" data-screen-target="setup">Setup Concierge</button>
         <button type="button" class="screen-link" data-screen-target="keys">Keys</button>
         <button type="button" class="screen-link" data-screen-target="agents">Agents</button>
         <button type="button" class="screen-link" data-screen-target="tools">Tools</button>
@@ -388,6 +389,95 @@
         <article class="card">
           <h3>Action Output</h3>
           <pre id="launchpad-output" class="mono-block">Run launchpad actions to see structured output here.</pre>
+        </article>
+      </section>
+
+      <section id="screen-setup" class="screen" data-screen="setup">
+        <div class="screen-head">
+          <h2>Setup Concierge</h2>
+          <p class="muted">Connect tokens, Meta app credentials, and AI provider keys without editing <code>.env</code>. Leave secret fields blank to keep the saved value.</p>
+        </div>
+
+        <div id="setup-metrics" class="metric-grid">
+          <article class="metric-card">
+            <p class="metric-label">Loading</p>
+            <p class="metric-value">--</p>
+          </article>
+        </div>
+
+        <div class="dual-grid">
+          <article class="card">
+            <h3>Setup Checklist</h3>
+            <div id="setup-checklist" class="stack-list">Loading saved setup...</div>
+          </article>
+
+          <article class="card">
+            <h3>Save Credentials</h3>
+
+            <label for="setup-default-api">Default API</label>
+            <select id="setup-default-api">
+              <option value="facebook">facebook</option>
+              <option value="instagram">instagram</option>
+              <option value="whatsapp">whatsapp</option>
+            </select>
+
+            <div class="dual-grid">
+              <div>
+                <label for="setup-facebook-token">Facebook Token</label>
+                <input id="setup-facebook-token" type="password" placeholder="Paste Facebook token" />
+              </div>
+              <div>
+                <label for="setup-instagram-token">Instagram Token</label>
+                <input id="setup-instagram-token" type="password" placeholder="Paste Instagram token" />
+              </div>
+            </div>
+
+            <label for="setup-whatsapp-token">WhatsApp Token</label>
+            <input id="setup-whatsapp-token" type="password" placeholder="Paste WhatsApp token" />
+
+            <div class="dual-grid">
+              <div>
+                <label for="setup-app-id">Meta App ID</label>
+                <input id="setup-app-id" type="text" placeholder="Paste App ID" />
+              </div>
+              <div>
+                <label for="setup-app-secret">Meta App Secret</label>
+                <input id="setup-app-secret" type="password" placeholder="Paste App Secret" />
+              </div>
+            </div>
+
+            <div class="dual-grid">
+              <div>
+                <label for="setup-agent-provider">Agent AI Provider</label>
+                <select id="setup-agent-provider">
+                  <option value="openai">openai</option>
+                  <option value="anthropic">anthropic</option>
+                  <option value="openrouter">openrouter</option>
+                  <option value="xai">xai</option>
+                  <option value="gemini">gemini</option>
+                </select>
+              </div>
+              <div>
+                <label for="setup-agent-model">Agent Model</label>
+                <input id="setup-agent-model" type="text" placeholder="Model name" />
+              </div>
+            </div>
+
+            <label for="setup-agent-api-key">Agent API Key</label>
+            <input id="setup-agent-api-key" type="password" placeholder="Paste provider API key" />
+
+            <div class="row">
+              <button id="setup-save" type="button">Save Setup</button>
+              <button id="setup-finish" type="button" class="secondary">Save + Finish Setup</button>
+              <button id="setup-reload" type="button" class="secondary">Reload Saved</button>
+            </div>
+            <p class="micro-copy">This writes into Social Flow config, not process env vars. Sensitive fields are cleared after save.</p>
+          </article>
+        </div>
+
+        <article class="card">
+          <h3>Last Setup Response</h3>
+          <pre id="setup-output" class="mono-block">Setup status will appear here.</pre>
         </article>
       </section>
 

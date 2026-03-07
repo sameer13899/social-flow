@@ -15,6 +15,7 @@ const { buildSessionTimeline } = require('../chat/timeline');
 const opsStorage = require('../ops/storage');
 const opsWorkflows = require('../ops/workflows');
 const opsRbac = require('../ops/rbac');
+const { buildReadinessReport } = require('../readiness');
 const { HostedPlatform } = require('../hosted/platform');
 
 const GUARD_MODES = new Set(['observe', 'approval', 'auto_safe']);
@@ -365,6 +366,9 @@ function configSnapshot() {
   const agent = typeof config.getAgentConfig === 'function'
     ? config.getAgentConfig()
     : { provider: 'openai', model: '', apiKey: '' };
+  const onboarding = typeof config.getOnboardingStatus === 'function'
+    ? config.getOnboardingStatus()
+    : { completed: false, completedAt: '', version: '' };
 
   return {
     activeProfile: typeof config.getActiveProfile === 'function' ? config.getActiveProfile() : 'default',
@@ -393,6 +397,11 @@ function configSnapshot() {
       provider: String(agent.provider || 'openai'),
       model: String(agent.model || ''),
       apiKeyConfigured: Boolean(agent.apiKey)
+    },
+    onboarding: {
+      completed: Boolean(onboarding.completed),
+      completedAt: String(onboarding.completedAt || ''),
+      version: String(onboarding.version || '')
     },
     defaults: {
       facebookPageId: typeof config.getDefaultFacebookPageId === 'function' ? config.getDefaultFacebookPageId() : '',
@@ -2555,6 +2564,7 @@ class GatewayServer {
     if (req.method === 'GET' && route === '/api/config') {
       sendJson(res, 200, {
         config: configSnapshot(),
+        readiness: buildReadinessReport(),
         now: new Date().toISOString()
       });
       return;
@@ -2628,6 +2638,19 @@ class GatewayServer {
           }
         }
 
+        const onboardingPatch = body.onboarding && typeof body.onboarding === 'object' ? body.onboarding : {};
+        if (Object.prototype.hasOwnProperty.call(onboardingPatch, 'completed')) {
+          const completed = toBool(onboardingPatch.completed, true);
+          if (completed && typeof config.markOnboardingComplete === 'function') {
+            config.markOnboardingComplete({ version: packageJson.version });
+            updated.push('onboarding.completed');
+          }
+          if (!completed && typeof config.clearOnboardingComplete === 'function') {
+            config.clearOnboardingComplete();
+            updated.push('onboarding.completed');
+          }
+        }
+
         if (!updated.length) {
           sendJson(res, 400, { ok: false, error: 'No config changes detected.' });
           return;
@@ -2637,6 +2660,7 @@ class GatewayServer {
           ok: true,
           updated,
           config: configSnapshot(),
+          readiness: buildReadinessReport(),
           now: new Date().toISOString()
         });
       } catch (error) {

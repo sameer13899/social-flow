@@ -425,8 +425,10 @@ module.exports = [
         });
         assert.equal(res.status, 200);
         assert.equal(Boolean(res.data.config), true);
+        assert.equal(Boolean(res.data.readiness), true);
         assert.equal(typeof res.data.config.tokens.facebook.configured, 'boolean');
         assert.equal(typeof res.data.config.agent.apiKeyConfigured, 'boolean');
+        assert.equal(typeof res.data.config.onboarding.completed, 'boolean');
         assert.equal(typeof res.data.config.industry.legacySelected, 'string');
       } finally {
         await server.stop();
@@ -460,6 +462,9 @@ module.exports = [
               provider: 'openai',
               model: 'gpt-4.1-mini',
               apiKey: 'sk-test-1234'
+            },
+            onboarding: {
+              completed: true
             }
           }
         });
@@ -474,6 +479,8 @@ module.exports = [
         assert.equal(saveRes.data.updated.includes('agent.provider'), true);
         assert.equal(saveRes.data.updated.includes('agent.model'), true);
         assert.equal(saveRes.data.updated.includes('agent.apiKey'), true);
+        assert.equal(saveRes.data.updated.includes('onboarding.completed'), true);
+        assert.equal(Boolean(saveRes.data.readiness), true);
 
         const configRes = await requestJson({
           port: server.port,
@@ -490,6 +497,8 @@ module.exports = [
         assert.equal(configRes.data.config.agent.provider, 'openai');
         assert.equal(configRes.data.config.agent.model, 'gpt-4.1-mini');
         assert.equal(configRes.data.config.agent.apiKeyConfigured, true);
+        assert.equal(configRes.data.config.onboarding.completed, true);
+        assert.equal(configRes.data.readiness.ok, true);
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
