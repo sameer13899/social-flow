@@ -469,6 +469,7 @@ function errorText(error, fallback = "Request failed") {
 
 function defaultAgentModel(provider) {
   const normalized = String(provider || "openai").trim().toLowerCase();
+  if (normalized === "ollama") return "qwen2.5:7b";
   if (normalized === "anthropic") return "claude-3-5-sonnet-latest";
   if (normalized === "openrouter") return "openai/gpt-4o-mini";
   if (normalized === "xai") return "grok-2-latest";

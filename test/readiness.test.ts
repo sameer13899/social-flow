@@ -72,6 +72,27 @@ module.exports = [
     }
   },
   {
+    name: 'readiness report treats local ollama provider as ready without api key',
+    fn: () => {
+      const report = buildReadinessReport({
+        config: mockConfig({
+          defaultApi: 'facebook',
+          tokens: { facebook: true },
+          onboardingCompleted: true,
+          appCredentialsConfigured: true,
+          agentProvider: 'ollama',
+          agentModel: 'qwen2.5:7b',
+          agentApiKey: ''
+        })
+      });
+      assert.equal(report.ok, true);
+      assert.equal(report.agent.provider, 'ollama');
+      assert.equal(report.agent.apiKeyConfigured, true);
+      assert.equal(report.warnings.some((item) => item.code === 'agent_api_key_missing'), false);
+      assert.equal(report.nextActions.some((item) => item.includes('--provider ollama --api-key')), false);
+    }
+  },
+  {
     name: 'gateway manager tailLines returns requested trailing lines',
     fn: () => {
       const text = ['one', 'two', 'three', 'four'].join('\n');

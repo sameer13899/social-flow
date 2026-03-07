@@ -31,10 +31,6 @@ async function maybePromptForApiKey(provider) {
     return resolveApiKeyForProvider(p, cfg.apiKey);
   }
 
-  if (p === 'ollama') {
-    throw new Error('Provider "ollama" is disabled. Configure a cloud provider with a valid API key.');
-  }
-
   if (!process.stdout.isTTY) {
     throw new Error(`Missing LLM API key for provider "${p}".`);
   }

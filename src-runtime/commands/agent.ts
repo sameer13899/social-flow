@@ -29,7 +29,7 @@ function registerAgentCommands(program: any) {
     .argument('[intent...]', 'Intent to plan+execute (e.g. "fix whatsapp webhook for clientA")')
     .option('--scope <scope>', 'Memory scope (overrides auto-detection)')
     .option('--no-memory', 'Disable auto-loading/saving memory')
-    .option('--provider <provider>', 'LLM provider: openai|anthropic|openrouter|xai|gemini', 'openai')
+    .option('--provider <provider>', 'LLM provider: ollama|openai|anthropic|openrouter|xai|gemini', 'openai')
     .option('--model <model>', 'LLM model (provider-specific)')
     .option('--json', 'JSON output (plan + results)')
     .option('--yes', 'Auto-approve plan (still prompts for high-risk steps)')
@@ -47,19 +47,14 @@ function registerAgentCommands(program: any) {
   agent
     .command('setup')
     .description('Configure default LLM provider/model for social agent/chat')
-    .option('--provider <provider>', 'openai|anthropic|openrouter|xai|gemini', 'openai')
+    .option('--provider <provider>', 'ollama|openai|anthropic|openrouter|xai|gemini', 'openai')
     .option('--model <model>', 'Model name for selected provider')
-    .option('--api-key <key>', 'API key for selected provider (required)')
+    .option('--api-key <key>', 'API key for selected provider (optional for ollama)')
     .action(async (opts: AgentSetupOptions) => {
       const provider = normalizeProvider(opts.provider);
       const model = String(opts.model || defaultModelForProvider(provider));
-      if (provider === 'ollama') {
-        console.error(chalk.red('\nProvider "ollama" is disabled. Use a cloud provider with a valid API key.\n'));
-        process.exit(1);
-      }
-
       const key = String(opts.apiKey || '').trim();
-      if (!key) {
+      if (provider !== 'ollama' && !key) {
         console.error(chalk.red('\nMissing --api-key for provider setup.\n'));
         process.exit(1);
       }
@@ -71,7 +66,7 @@ function registerAgentCommands(program: any) {
       console.log(chalk.green('\nAgent provider configured.'));
       console.log(chalk.gray(`Provider: ${provider}`));
       console.log(chalk.gray(`Model: ${model}`));
-      console.log(chalk.gray('API key: configured\n'));
+      console.log(chalk.gray(`API key: ${provider === 'ollama' ? 'not required (local provider)' : 'configured'}\n`));
     });
 
   const mem = agent.command('memory').description('Manage agent memory scopes');

@@ -16,10 +16,13 @@ function getAgentState(cfg) {
   const raw = typeof cfg.getAgentConfig === 'function'
     ? cfg.getAgentConfig()
     : { provider: 'openai', model: '', apiKey: '' };
+  const provider = String(raw.provider || 'openai').trim().toLowerCase() || 'openai';
+  const needsApiKey = provider !== 'ollama';
   return {
-    provider: String(raw.provider || 'openai').trim().toLowerCase() || 'openai',
+    provider,
     model: String(raw.model || '').trim(),
-    apiKeyConfigured: Boolean(String(raw.apiKey || '').trim())
+    needsApiKey,
+    apiKeyConfigured: needsApiKey ? Boolean(String(raw.apiKey || '').trim()) : true
   };
 }
 
@@ -70,7 +73,7 @@ function buildReadinessReport(options = {}) {
     });
   }
 
-  if (!agentState.apiKeyConfigured && includeWarnings) {
+  if (agentState.needsApiKey && !agentState.apiKeyConfigured && includeWarnings) {
     warnings.push({
       code: 'agent_api_key_missing',
       message: `Agent provider "${agentState.provider}" has no API key configured (needed for chat/copilot).`,
@@ -85,7 +88,7 @@ function buildReadinessReport(options = {}) {
     nextActions.push('social start');
     nextActions.push('social doctor');
   }
-  if (!agentState.apiKeyConfigured) {
+  if (agentState.needsApiKey && !agentState.apiKeyConfigured) {
     nextActions.push(`social agent setup --provider ${agentState.provider} --api-key <key>`);
   }
 

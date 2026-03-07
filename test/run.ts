@@ -38,6 +38,8 @@ async function run() {
       'onboarding-ready.test',
       'gateway.test',
       'studio-command.test',
+      'provider-options.test',
+      'uninstall-command.test',
       'policy.test',
       'ops.test',
       'hub.test',

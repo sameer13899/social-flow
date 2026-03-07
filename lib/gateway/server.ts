@@ -397,7 +397,9 @@ function configSnapshot() {
     agent: {
       provider: String(agent.provider || 'openai'),
       model: String(agent.model || ''),
-      apiKeyConfigured: Boolean(agent.apiKey)
+      apiKeyConfigured: String(agent.provider || 'openai').trim().toLowerCase() === 'ollama'
+        ? true
+        : Boolean(agent.apiKey)
     },
     onboarding: {
       completed: Boolean(onboarding.completed),

@@ -102,9 +102,11 @@ Memory examples:
 
 Hatch requires an API key when using hosted providers. On launch, it can prompt for:
 
-- provider (`openai`, `openrouter`, `xai`)
+- provider (`ollama`, `openai`, `openrouter`, `xai`)
 - API key
 - model
+
+`ollama` is the local/no-key option and defaults to `http://127.0.0.1:11434`.
 
 CLI options:
 
