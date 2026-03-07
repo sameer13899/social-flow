@@ -50,6 +50,7 @@ Studio routes:
 - `POST /api/sdk/actions/plan`
 - `POST /api/sdk/actions/execute`
 - `GET /api/platform/distribution`
+- `GET /api/self-host/admin`
 - `POST /api/orchestrate`
 - `POST /api/keys`
 - `GET /api/keys`
@@ -137,6 +138,16 @@ Sessions are persisted through the chat memory layer:
 - Uses `lib/chat/agent.js` + `lib/ai/executor.js`
 - Pending actions require explicit conversational confirmation (`yes`/`no`)
 
+## Self-Hosted Admin Snapshot
+
+`GET /api/self-host/admin` returns a deployment-oriented snapshot intended for the Studio admin screen and operator diagnostics. It includes:
+
+- gateway version, runtime, and base URL
+- security posture (`x-gateway-key`, CORS, rate limiting, hosted vault bootstrap)
+- storage paths for config, logs, hosted data, recipes, triggers, webchat, Baileys, and ops state
+- actionable setup/hardening checks
+- operator commands for doctor, status, start, Studio launch, upgrade, and backup
+
 ## Railway + Frontend
 
 Recommended env vars on Railway:
@@ -165,6 +176,8 @@ It includes:
 - Approvals Center
 - Ads Diagnosis
 - Ops Launchpad
+- Setup Concierge
+- Workspace Admin
 
 ## Files
 

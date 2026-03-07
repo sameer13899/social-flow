@@ -1231,6 +1231,11 @@ button:disabled {
 #recipes-list,
 #triggers-list,
 #keys-list,
+#admin-checks,
+#admin-paths,
+#admin-roles-list,
+#admin-invites-list,
+#admin-activity-list,
 #webchat-widget-list,
 #webchat-sessions-list,
 #baileys-sessions-list {
@@ -1293,11 +1298,18 @@ code {
 #recipes-output,
 #diagnose-output,
 #launchpad-output,
+#admin-output,
+#admin-playbook,
 #baileys-output,
 #webchat-public-output,
 #webchat-session-messages {
   max-height: 440px;
   overflow: auto;
+}
+
+#admin-activity-limit {
+  width: 92px;
+  min-width: 92px;
 }
 
 * {
@@ -1446,6 +1458,11 @@ code {
   #recipes-list,
   #triggers-list,
   #keys-list,
+  #admin-checks,
+  #admin-paths,
+  #admin-roles-list,
+  #admin-invites-list,
+  #admin-activity-list,
   #webchat-widget-list,
   #webchat-sessions-list,
   #baileys-sessions-list {

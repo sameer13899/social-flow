@@ -37,7 +37,8 @@ const state = {
   ws: null,
   wsEvents: [],
   setupSnapshot: null,
-  setupDraftInitialized: false
+  setupDraftInitialized: false,
+  adminSnapshot: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -133,6 +134,25 @@ const nodes = {
   setupFinish: $("setup-finish"),
   setupReload: $("setup-reload"),
   setupOutput: $("setup-output"),
+
+  adminReload: $("admin-reload"),
+  adminMetrics: $("admin-metrics"),
+  adminChecks: $("admin-checks"),
+  adminPaths: $("admin-paths"),
+  adminPlaybook: $("admin-playbook"),
+  adminInviteRole: $("admin-invite-role"),
+  adminInviteHours: $("admin-invite-hours"),
+  adminInviteBaseUrl: $("admin-invite-base-url"),
+  adminInviteCreate: $("admin-invite-create"),
+  adminTeamReload: $("admin-team-reload"),
+  adminInviteStats: $("admin-invite-stats"),
+  adminRolesList: $("admin-roles-list"),
+  adminInvitesList: $("admin-invites-list"),
+  adminActivityLimit: $("admin-activity-limit"),
+  adminActivityReload: $("admin-activity-reload"),
+  adminActivityExport: $("admin-activity-export"),
+  adminActivityList: $("admin-activity-list"),
+  adminOutput: $("admin-output"),
 
   keyService: $("key-service"),
   keyLabel: $("key-label"),
@@ -249,6 +269,12 @@ const SCREEN_META = {
     title: "Setup Concierge",
     summary: "Connect tokens, app credentials, and AI providers without editing process environment variables."
   },
+  admin: {
+    group: "ops",
+    kicker: "Operations",
+    title: "Workspace Admin",
+    summary: "Self-hosted deployment confidence for hardening, storage, team access, and operator activity."
+  },
   logs: {
     group: "ops",
     kicker: "Operations",
@@ -363,6 +389,9 @@ function pushConfigToInputs() {
   nodes.cfgOperatorName.value = state.config.operatorName;
   nodes.operatorId.value = state.config.operatorId;
   nodes.operatorName.value = state.config.operatorName;
+  if (!String(nodes.adminInviteBaseUrl.value || "").trim()) {
+    nodes.adminInviteBaseUrl.value = state.config.baseUrl;
+  }
   nodes.workspacePill.textContent = `Workspace: ${state.config.workspace || "default"}`;
 }
 
@@ -459,6 +488,21 @@ function formatDateTime(value) {
   } catch {
     return date.toLocaleString();
   }
+}
+
+function labelFromKey(value) {
+  return String(value || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatDurationLabel(value) {
+  const raw = String(value || "").trim();
+  if (raw) return raw;
+  return "--";
 }
 
 function isCompactNavigation() {
@@ -598,6 +642,10 @@ function inferSetupIcon(meta, title = "") {
 
 function writeSetupOutput(title, payload) {
   nodes.setupOutput.textContent = `${title}\n\n${pretty(payload)}`;
+}
+
+function writeAdminOutput(title, payload) {
+  nodes.adminOutput.textContent = `${title}\n\n${pretty(payload)}`;
 }
 
 function makeMetricCard(label, value) {
@@ -847,6 +895,263 @@ function syncSetupModelForProvider(force = false) {
   }
   nodes.setupAgentModel.placeholder = nextDefault;
   nodes.setupAgentProvider.dataset.lastProvider = provider;
+}
+
+function renderAdminMetrics(system) {
+  const security = system?.security || {};
+  const setup = system?.setup || {};
+  const runtime = system?.runtime || {};
+  nodes.adminMetrics.innerHTML = "";
+  [
+    { label: "Gateway Version", value: system?.version || "--" },
+    { label: "Uptime", value: formatDurationLabel(runtime.uptime) },
+    { label: "Gateway Guard", value: security.apiKeyRequired ? "Locked" : "Open" },
+    { label: "Studio Assets", value: setup.studioFrontendInstalled ? "Ready" : "Missing" },
+    { label: "Onboarding", value: setup.onboardingCompleted ? "Complete" : "Pending" }
+  ].forEach((item) => nodes.adminMetrics.appendChild(makeMetricCard(item.label, item.value)));
+}
+
+function renderAdminChecks(system) {
+  const rows = Array.isArray(system?.checks) ? system.checks : [];
+  renderStackList(nodes.adminChecks, rows, "No self-hosted checks available.", (row) => makeHostedCard({
+    title: labelFromKey(row.key || "check"),
+    eyebrow: row.ok ? "Ready" : row.severity === "recommended" ? "Recommended" : "Required",
+    meta: row.detail || "",
+    body: row.fix ? `Next: ${row.fix}` : "",
+    icon: row.ok ? "shield" : row.severity === "recommended" ? "spark" : "trigger"
+  }));
+}
+
+function renderAdminPaths(system) {
+  const rows = Array.isArray(system?.paths) ? system.paths : [];
+  renderStackList(nodes.adminPaths, rows, "No storage paths reported.", (row) => makeHostedCard({
+    title: row.label || labelFromKey(row.key || "path"),
+    eyebrow: row.exists ? "Present" : "Missing",
+    body: row.path || "Path unavailable.",
+    chips: [row.key || ""],
+    icon: row.exists ? "shield" : "logs"
+  }));
+}
+
+function renderAdminPlaybook(system) {
+  const runtime = system?.runtime || {};
+  const network = system?.network || {};
+  const commands = system?.commands || {};
+  const nextActions = Array.isArray(system?.nextActions) ? system.nextActions : [];
+  const lines = [
+    `Version: ${system?.version || "--"}`,
+    `Workspace: ${system?.workspace || "--"}`,
+    `Runtime: ${runtime.node || "--"} on ${runtime.platform || "--"} (${runtime.arch || "--"})`,
+    `Gateway URL: ${network.baseUrl || "--"}`,
+    "",
+    "Core Commands:",
+    `  doctor  -> ${commands.doctor || "social doctor"}`,
+    `  status  -> ${commands.status || "social status"}`,
+    `  start   -> ${commands.start || "social start"}`,
+    `  studio  -> ${commands.studio || "social studio"}`,
+    `  upgrade -> ${commands.upgrade || "npm install -g @vishalgojha/social-flow@latest"}`,
+    `  backup  -> ${commands.backup || "Back up the config and hosted data directories."}`
+  ];
+  if (nextActions.length) {
+    lines.push("", "Next Actions:");
+    nextActions.forEach((item) => lines.push(`  - ${item}`));
+  }
+  nodes.adminPlaybook.textContent = lines.join("\n");
+}
+
+function renderAdminInviteStats(stats) {
+  nodes.adminInviteStats.innerHTML = "";
+  [
+    { label: "Active Invites", value: String(stats?.active ?? "--") },
+    { label: "Accepted", value: String(stats?.accepted ?? "--") },
+    { label: "Expired", value: String(stats?.expiredRecent ?? "--") },
+    { label: "Avg Accept", value: Number(stats?.avgAcceptMs || 0) > 0 ? `${Math.round(Number(stats.avgAcceptMs) / 60000)}m` : "--" }
+  ].forEach((item) => nodes.adminInviteStats.appendChild(makeMetricCard(item.label, item.value)));
+}
+
+async function loadSelfHostedAdmin() {
+  try {
+    const out = await requestApi("/api/self-host/admin");
+    const system = out?.system || {};
+    state.adminSnapshot = system;
+    if (!String(nodes.adminInviteBaseUrl.value || "").trim()) {
+      nodes.adminInviteBaseUrl.value = String(system?.network?.baseUrl || state.config.baseUrl || "");
+    }
+    renderAdminMetrics(system);
+    renderAdminChecks(system);
+    renderAdminPaths(system);
+    renderAdminPlaybook(system);
+  } catch (error) {
+    nodes.adminChecks.textContent = `Unable to load admin snapshot: ${errorText(error)}`;
+    nodes.adminPaths.textContent = `Unable to load storage paths: ${errorText(error)}`;
+    nodes.adminPlaybook.textContent = `Unable to load playbook: ${errorText(error)}`;
+  }
+}
+
+async function loadTeamRoles() {
+  try {
+    const out = await requestApi(`/api/team/roles?workspace=${encodeURIComponent(state.config.workspace || "default")}`);
+    const roles = Array.isArray(out?.roles) ? out.roles : [];
+    renderStackList(nodes.adminRolesList, roles, "No team roles assigned yet.", (row) => makeHostedCard({
+      title: row.user || "user",
+      eyebrow: row.role || "viewer",
+      meta: `${row.scope || "workspace"} scope`,
+      body: row.workspaceRole
+        ? `Workspace role ${row.workspaceRole}${row.globalRole ? `, global fallback ${row.globalRole}` : ""}.`
+        : `Global role ${row.globalRole || "viewer"}.`,
+      icon: row.role === "owner" || row.role === "admin" ? "shield" : "agent"
+    }));
+  } catch (error) {
+    nodes.adminRolesList.textContent = `Unable to load roles: ${errorText(error)}`;
+  }
+}
+
+async function loadTeamInvites() {
+  try {
+    const out = await requestApi(`/api/team/invites?workspace=${encodeURIComponent(state.config.workspace || "default")}`);
+    const invites = Array.isArray(out?.invites) ? out.invites : [];
+    renderStackList(nodes.adminInvitesList, invites, "No invites created yet.", (row) => {
+      const card = makeHostedCard({
+        title: row.role || "invite",
+        eyebrow: row.status || "active",
+        meta: row.createdBy ? `created by ${row.createdBy}` : "",
+        body: row.expiresAt
+          ? `Expires ${formatDateTime(row.expiresAt)}${row.acceptedBy ? `. Accepted by ${row.acceptedBy}.` : "."}`
+          : "No expiration recorded.",
+        chips: [
+          row.id || "",
+          row.tokenMasked || "",
+          row.acceptedAt ? `Accepted ${formatDateTime(row.acceptedAt)}` : ""
+        ],
+        icon: row.status === "accepted" ? "shield" : row.status === "active" ? "spark" : "logs"
+      });
+      if (row.status === "active") {
+        const actionRow = document.createElement("div");
+        actionRow.className = "row";
+        const resendBtn = document.createElement("button");
+        resendBtn.type = "button";
+        resendBtn.textContent = "Resend";
+        resendBtn.addEventListener("click", () => resendTeamInvite(row.id));
+        const revokeBtn = document.createElement("button");
+        revokeBtn.type = "button";
+        revokeBtn.className = "secondary";
+        revokeBtn.textContent = "Revoke";
+        revokeBtn.addEventListener("click", () => revokeTeamInvite(row.id));
+        actionRow.appendChild(resendBtn);
+        actionRow.appendChild(revokeBtn);
+        card.appendChild(actionRow);
+      }
+      return card;
+    });
+  } catch (error) {
+    nodes.adminInvitesList.textContent = `Unable to load invites: ${errorText(error)}`;
+  }
+}
+
+async function loadTeamInviteStats() {
+  try {
+    const out = await requestApi(`/api/team/invites/stats?workspace=${encodeURIComponent(state.config.workspace || "default")}&days=30`);
+    renderAdminInviteStats(out?.stats || {});
+  } catch (error) {
+    nodes.adminInviteStats.innerHTML = "";
+    nodes.adminInviteStats.appendChild(makeMetricCard("Invite Stats", "Error"));
+  }
+}
+
+async function loadTeamActivity() {
+  const limit = Math.max(5, Math.min(200, Number(nodes.adminActivityLimit.value || 25) || 25));
+  try {
+    const out = await requestApi(`/api/team/activity?workspace=${encodeURIComponent(state.config.workspace || "default")}&limit=${encodeURIComponent(limit)}`);
+    const rows = Array.isArray(out?.activity) ? out.activity : [];
+    renderStackList(nodes.adminActivityList, rows, "No team activity logged yet.", (row) => makeHostedCard({
+      title: row.summary || row.action || "activity",
+      eyebrow: row.status || "logged",
+      meta: `${row.actor || "system"} • ${formatDateTime(row.createdAt) || row.createdAt || "time unknown"}`,
+      body: row.why || row.action || "",
+      chips: [row.action || "", row.risk || ""],
+      icon: row.status === "success" ? "shield" : row.status === "error" ? "trigger" : "spark"
+    }));
+  } catch (error) {
+    nodes.adminActivityList.textContent = `Unable to load activity: ${errorText(error)}`;
+  }
+}
+
+async function exportTeamActivityJson() {
+  const limit = Math.max(5, Math.min(200, Number(nodes.adminActivityLimit.value || 25) || 25));
+  try {
+    const out = await requestApi(`/api/team/activity/export?workspace=${encodeURIComponent(state.config.workspace || "default")}&format=json&limit=${encodeURIComponent(limit)}`);
+    writeAdminOutput("Team activity exported", out);
+    toast("Team activity exported to output panel.", "ok");
+  } catch (error) {
+    toast(errorText(error, "Failed to export activity"), "err");
+  }
+}
+
+async function createTeamInvite() {
+  try {
+    const role = String(nodes.adminInviteRole.value || "operator").trim();
+    const expiresInHours = Math.max(1, Math.min(720, Number(nodes.adminInviteHours.value || 72) || 72));
+    const baseUrl = String(nodes.adminInviteBaseUrl.value || state.config.baseUrl || "").trim();
+    const out = await requestApi("/api/team/invites", {
+      method: "POST",
+      body: {
+        workspace: state.config.workspace || "default",
+        role,
+        expiresInHours,
+        baseUrl
+      }
+    });
+    writeAdminOutput("Invite created", out?.invite || out);
+    toast("Invite created.", "ok");
+    await Promise.all([loadTeamInvites(), loadTeamInviteStats()]);
+  } catch (error) {
+    toast(errorText(error, "Failed to create invite"), "err");
+  }
+}
+
+async function resendTeamInvite(id) {
+  try {
+    const out = await requestApi("/api/team/invites/resend", {
+      method: "POST",
+      body: {
+        workspace: state.config.workspace || "default",
+        id,
+        baseUrl: String(nodes.adminInviteBaseUrl.value || state.config.baseUrl || "").trim(),
+        expiresInHours: Math.max(1, Math.min(720, Number(nodes.adminInviteHours.value || 72) || 72))
+      }
+    });
+    writeAdminOutput("Invite rotated", out?.invite || out);
+    toast("Invite link rotated.", "ok");
+    await Promise.all([loadTeamInvites(), loadTeamInviteStats()]);
+  } catch (error) {
+    toast(errorText(error, "Failed to rotate invite"), "err");
+  }
+}
+
+async function revokeTeamInvite(id) {
+  try {
+    await requestApi("/api/team/invites/revoke", {
+      method: "POST",
+      body: {
+        workspace: state.config.workspace || "default",
+        id
+      }
+    });
+    toast("Invite revoked.", "ok");
+    await Promise.all([loadTeamInvites(), loadTeamInviteStats()]);
+  } catch (error) {
+    toast(errorText(error, "Failed to revoke invite"), "err");
+  }
+}
+
+async function loadAdminSurface() {
+  await Promise.all([
+    loadSelfHostedAdmin(),
+    loadTeamRoles(),
+    loadTeamInvites(),
+    loadTeamInviteStats(),
+    loadTeamActivity()
+  ]);
 }
 
 function renderReadiness(report) {
@@ -2110,6 +2415,7 @@ async function refreshAll() {
     loadQueues().catch(() => {}),
     refreshLaunchpadReadiness().catch(() => {}),
     loadSetupSnapshot().catch(() => {}),
+    loadAdminSurface().catch(() => {}),
     loadHostedKeys().catch(() => {}),
     loadHostedAgents().catch(() => {}),
     loadHostedTools().catch(() => {}),
@@ -2292,6 +2598,12 @@ function bindEvents() {
     }
   });
   nodes.setupAgentProvider.addEventListener("change", () => syncSetupModelForProvider());
+
+  nodes.adminReload.addEventListener("click", () => loadSelfHostedAdmin());
+  nodes.adminTeamReload.addEventListener("click", () => loadAdminSurface());
+  nodes.adminInviteCreate.addEventListener("click", () => createTeamInvite());
+  nodes.adminActivityReload.addEventListener("click", () => loadTeamActivity());
+  nodes.adminActivityExport.addEventListener("click", () => exportTeamActivityJson());
 
   nodes.keySave.addEventListener("click", () => saveHostedKey());
   nodes.keyReload.addEventListener("click", () => loadHostedKeys());

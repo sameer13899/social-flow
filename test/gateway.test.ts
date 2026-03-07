@@ -437,6 +437,62 @@ module.exports = [
     }
   },
   {
+    name: 'gateway self-host admin endpoint exposes deployment snapshot',
+    fn: async () => {
+      const oldHome = process.env.META_CLI_HOME;
+      const envKeys = [
+        'SOCIAL_HOSTED_MASTER_KEY',
+        'SOCIAL_HOSTED_BOOTSTRAP_API_KEY',
+        'SOCIAL_HOSTED_BOOTSTRAP_USER_ID',
+        'SOCIAL_HOSTED_HOME'
+      ];
+      const prevEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+      const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      process.env.META_CLI_HOME = tempHome;
+      process.env.SOCIAL_HOSTED_MASTER_KEY = 'master-key-test-value';
+      process.env.SOCIAL_HOSTED_BOOTSTRAP_API_KEY = 'bootstrap-key-test-value';
+      process.env.SOCIAL_HOSTED_BOOTSTRAP_USER_ID = 'default';
+      process.env.SOCIAL_HOSTED_HOME = path.join(tempHome, 'hosted-home');
+      const server = createGatewayServer({
+        host: '127.0.0.1',
+        port: 0,
+        apiKey: 'test-secret',
+        requireApiKey: true,
+        corsOrigins: 'https://studio.local'
+      });
+      try {
+        await server.start();
+        const res = await requestJson({
+          port: server.port,
+          method: 'GET',
+          pathName: '/api/self-host/admin',
+          headers: { 'X-Gateway-Key': 'test-secret' }
+        });
+        assert.equal(res.status, 200);
+        assert.equal(res.data.ok, true);
+        assert.equal(res.data.system.service, 'social-api-gateway');
+        assert.equal(res.data.system.version, require('../package.json').version);
+        assert.equal(res.data.system.security.apiKeyRequired, true);
+        assert.equal(res.data.system.security.apiKeyConfigured, true);
+        assert.equal(res.data.system.security.corsRestricted, true);
+        assert.equal(res.data.system.setup.studioFrontendInstalled, true);
+        assert.equal(Array.isArray(res.data.system.paths), true);
+        assert.equal(res.data.system.paths.some((row) => row.key === 'configFile' && String(row.path || '').includes('.social-cli')), true);
+        assert.equal(Array.isArray(res.data.system.checks), true);
+        assert.equal(res.data.system.checks.some((row) => row.key === 'gateway_access'), true);
+        assert.equal(typeof res.data.system.commands.upgrade, 'string');
+        assert.equal(String(res.data.system.urls.studio || '').includes('/studio/app/'), true);
+      } finally {
+        await server.stop();
+        process.env.META_CLI_HOME = oldHome;
+        envKeys.forEach((key) => {
+          if (prevEnv[key] === undefined) delete process.env[key];
+          else process.env[key] = prevEnv[key];
+        });
+      }
+    }
+  },
+  {
     name: 'gateway config update endpoint saves tokens and agent credentials',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
