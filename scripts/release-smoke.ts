@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
 const distRoot = path.resolve(__dirname, '..');
-// eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
-const { createGatewayServer } = require(path.join(distRoot, 'lib', 'gateway', 'server'));
 
 type JsonResponse = {
   status: number | undefined;
@@ -79,21 +78,42 @@ function requestRaw({ port, method, pathName }: {
 
 function runCliHelpSmoke() {
   const cliPath = path.join(distRoot, 'bin', 'social.js');
-  const src = fs.readFileSync(cliPath, 'utf8');
-  assert.match(src, /const gatewayCommands = loadCommandModule\('gateway'\);/);
-  assert.match(src, /gatewayCommands\(program\);/);
-  assert.match(src, /const chatCommands = loadCommandModule\('chat'\);/);
-  assert.ok(!src.includes('../commands/studio'), 'legacy studio command import still present');
-  assert.ok(!src.includes('gateway --open'), 'legacy gateway --open reference still present');
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'social-cli-smoke-help-home-'));
+  const result = spawnSync(process.execPath, [cliPath, '--help'], {
+    cwd: path.resolve(distRoot, '..'),
+    env: {
+      ...process.env,
+      SOCIAL_FLOW_HOME: tempHome,
+      SOCIAL_CLI_HOME: tempHome,
+      META_CLI_HOME: tempHome
+    },
+    encoding: 'utf8'
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr || result.stdout || 'social --help failed');
+    const output = `${String(result.stdout || '')}\n${String(result.stderr || '')}`;
+    assert.match(output, /Usage: social/i);
+    assert.match(output, /onboard\|setup/i);
+    assert.match(output, /\bdoctor\b/i);
+    assert.match(output, /\bstatus\b/i);
+    assert.ok(!output.includes('gateway --open'), 'legacy gateway --open reference still present');
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 }
 
 async function runGatewaySmoke() {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'social-cli-smoke-gateway-home-'));
   const oldMetaHome = process.env.META_CLI_HOME;
   const oldSocialHome = process.env.SOCIAL_CLI_HOME;
+  const oldFlowHome = process.env.SOCIAL_FLOW_HOME;
   process.env.META_CLI_HOME = tempHome;
   process.env.SOCIAL_CLI_HOME = tempHome;
+  process.env.SOCIAL_FLOW_HOME = tempHome;
 
+  // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
+  const { createGatewayServer } = require(path.join(distRoot, 'lib', 'gateway', 'server'));
   const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
   try {
     await server.start();
@@ -121,6 +141,8 @@ async function runGatewaySmoke() {
     else process.env.META_CLI_HOME = oldMetaHome;
     if (oldSocialHome === undefined) delete process.env.SOCIAL_CLI_HOME;
     else process.env.SOCIAL_CLI_HOME = oldSocialHome;
+    if (oldFlowHome === undefined) delete process.env.SOCIAL_FLOW_HOME;
+    else process.env.SOCIAL_FLOW_HOME = oldFlowHome;
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
 }
