@@ -8,7 +8,7 @@ const SCOPE_REQUIREMENTS: Record<string, string[]> = {
 
 export function validateToken(config: SocialConfig): void {
   if (!config.token || config.token.trim().length < 20) {
-    throw new Error("Missing or invalid token in ~/.social-cli/config.json");
+    throw new Error("Missing or invalid token in ~/.social-flow/config.json");
   }
 }
 

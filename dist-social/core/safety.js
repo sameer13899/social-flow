@@ -9,7 +9,7 @@ const SCOPE_REQUIREMENTS = {
 };
 function validateToken(config) {
     if (!config.token || config.token.trim().length < 20) {
-        throw new Error("Missing or invalid token in ~/.social-cli/config.json");
+        throw new Error("Missing or invalid token in ~/.social-flow/config.json");
     }
 }
 function validateScopes(intent, config) {

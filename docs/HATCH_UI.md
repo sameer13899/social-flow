@@ -48,9 +48,9 @@ Confidence threshold is controlled by:
 
 Hatch saves memory under:
 
-- `~/.social-cli/hatch/sessions/<sessionId>.json`
-- `~/.social-cli/hatch/profiles/<profileId>.json`
-- `~/.social-cli/hatch/index.json`
+- `~/.social-flow/hatch/sessions/<sessionId>.json`
+- `~/.social-flow/hatch/profiles/<profileId>.json`
+- `~/.social-flow/hatch/index.json`
 
 Legacy single-file memory (`~/.social-cli/hatch/memory.json`) is auto-migrated on load.
 
@@ -102,9 +102,11 @@ Memory examples:
 
 Hatch requires an API key when using hosted providers. On launch, it can prompt for:
 
-- provider (`openai`, `openrouter`, `xai`)
+- provider (`ollama`, `openai`, `openrouter`, `xai`)
 - API key
 - model
+
+`ollama` is the local/no-key option and defaults to `http://127.0.0.1:11434`.
 
 CLI options:
 

@@ -15,13 +15,13 @@ type TuiOptions = {
   skipOnboardCheck?: boolean;
 };
 
-type HatchProvider = 'openai' | 'openrouter' | 'xai';
+type HatchProvider = 'openai' | 'openrouter' | 'xai' | 'ollama';
 type PromptedAiSetup = {
   apiKey: string;
   model: string;
 };
 
-const SUPPORTED_PROVIDERS: HatchProvider[] = ['openai', 'openrouter', 'xai'];
+const SUPPORTED_PROVIDERS: HatchProvider[] = ['openai', 'openrouter', 'xai', 'ollama'];
 
 function runSubprocess(command: string, args: string[], env: NodeJS.ProcessEnv) {
   return new Promise<void>((resolve, reject) => {
@@ -45,13 +45,14 @@ function normalizeProvider(raw: string): HatchProvider {
   const value = String(raw || '').trim().toLowerCase();
   if (value === 'openrouter') return 'openrouter';
   if (value === 'xai' || value === 'grok') return 'xai';
+  if (value === 'ollama' || value === 'local') return 'ollama';
   return 'openai';
 }
 
 function parseExplicitProvider(raw: string): HatchProvider | null {
   const value = String(raw || '').trim().toLowerCase();
   if (!value) return null;
-  if (value === 'openai' || value === 'openrouter' || value === 'xai' || value === 'grok') {
+  if (value === 'openai' || value === 'openrouter' || value === 'xai' || value === 'grok' || value === 'ollama' || value === 'local') {
     return normalizeProvider(value);
   }
   return null;
@@ -60,12 +61,14 @@ function parseExplicitProvider(raw: string): HatchProvider | null {
 function providerLabel(provider: HatchProvider): string {
   if (provider === 'openrouter') return 'OpenRouter';
   if (provider === 'xai') return 'xAI (Grok)';
+  if (provider === 'ollama') return 'Ollama (Local)';
   return 'OpenAI';
 }
 
 function providerApiEnvName(provider: HatchProvider): string {
   if (provider === 'openrouter') return 'OPENROUTER_API_KEY';
   if (provider === 'xai') return 'XAI_API_KEY';
+  if (provider === 'ollama') return 'SOCIAL_OLLAMA_BASE_URL';
   return 'OPENAI_API_KEY';
 }
 
@@ -76,13 +79,21 @@ function providerBaseUrl(provider: HatchProvider): string {
   if (provider === 'xai') {
     return String(process.env.SOCIAL_XAI_BASE_URL || process.env.XAI_BASE_URL || 'https://api.x.ai/v1').trim();
   }
+  if (provider === 'ollama') {
+    return String(process.env.SOCIAL_OLLAMA_BASE_URL || process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').trim();
+  }
   return String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').trim();
 }
 
 function providerModel(provider: HatchProvider): string {
   if (provider === 'openrouter') return 'openai/gpt-4o-mini';
   if (provider === 'xai') return 'grok-2-latest';
+  if (provider === 'ollama') return 'qwen2.5:7b';
   return 'gpt-4o-mini';
+}
+
+function providerNeedsApiKey(provider: HatchProvider): boolean {
+  return provider !== 'ollama';
 }
 
 function configuredAgent() {
@@ -112,6 +123,9 @@ function getProviderApiKeyFromEnv(provider: HatchProvider): string {
   }
   if (provider === 'xai') {
     return String(process.env.SOCIAL_XAI_API_KEY || process.env.XAI_API_KEY || '').trim();
+  }
+  if (provider === 'ollama') {
+    return '';
   }
   return String(process.env.OPENAI_API_KEY || '').trim();
 }
@@ -155,7 +169,8 @@ async function promptForProvider(defaultProvider: HatchProvider): Promise<HatchP
       choices: [
         { name: 'OpenAI', value: 'openai' },
         { name: 'OpenRouter', value: 'openrouter' },
-        { name: 'xAI (Grok)', value: 'xai' }
+        { name: 'xAI (Grok)', value: 'xai' },
+        { name: 'Ollama (Local)', value: 'ollama' }
       ]
     }
   ]);
@@ -163,6 +178,9 @@ async function promptForProvider(defaultProvider: HatchProvider): Promise<HatchP
 }
 
 async function promptForApiKey(provider: HatchProvider, suggestedModel: string): Promise<PromptedAiSetup> {
+  if (!providerNeedsApiKey(provider)) {
+    return { apiKey: '', model: suggestedModel };
+  }
   if (!process.stdout.isTTY || !process.stdin.isTTY) {
     return { apiKey: '', model: suggestedModel };
   }
@@ -214,7 +232,7 @@ function registerTuiCommand(program: any) {
     .command('tui')
     .alias('hatch')
     .description('Launch agentic terminal UI (chat-first control plane)')
-    .option('--ai-provider <provider>', 'AI provider (openai|openrouter|xai)')
+    .option('--ai-provider <provider>', 'AI provider (openai|openrouter|xai|ollama)')
     .option('--ai-model <model>', 'AI model override')
     .option('--ai-base-url <url>', 'AI base URL override')
     .option('--ai-api-key <key>', 'AI API key override')
@@ -242,7 +260,7 @@ function registerTuiCommand(program: any) {
       let resolvedModel = resolveModel(provider, opts);
 
       let resolvedApiKey = resolveApiKey(provider, opts);
-      if (!resolvedApiKey) {
+      if (!resolvedApiKey && providerNeedsApiKey(provider)) {
         const allowProviderPrompt = !explicitProvider && !opts.aiApiKey && process.stdout.isTTY && process.stdin.isTTY;
         if (allowProviderPrompt) {
           provider = await promptForProvider(provider);
@@ -251,7 +269,7 @@ function registerTuiCommand(program: any) {
         }
       }
 
-      if (!resolvedApiKey) {
+      if (!resolvedApiKey && providerNeedsApiKey(provider)) {
         const prompted = await promptForApiKey(provider, resolvedModel);
         resolvedApiKey = prompted.apiKey;
         if (!opts.aiModel) {
@@ -259,17 +277,15 @@ function registerTuiCommand(program: any) {
         }
       }
 
-      if (!resolvedApiKey) {
+      if (!resolvedApiKey && providerNeedsApiKey(provider)) {
         console.error(chalk.red('\nHatch UI requires a valid API key.'));
         console.error(chalk.gray(`Set ${providerApiEnvName(provider)}, pass --ai-api-key, or run \`social hatch\` in a terminal to enter it securely.\n`));
         process.exit(1);
       }
 
-      // TUI parser currently uses OpenAI-compatible transport for AI parsing.
-      const runtimeProvider = 'openai';
       const env: NodeJS.ProcessEnv = {
         ...process.env,
-        SOCIAL_TUI_AI_PROVIDER: runtimeProvider,
+        SOCIAL_TUI_AI_PROVIDER: provider,
         SOCIAL_TUI_AI_VENDOR: provider,
         SOCIAL_TUI_AI_MODEL: resolvedModel,
         SOCIAL_TUI_AI_BASE_URL: resolveBaseUrl(provider, opts),
@@ -301,4 +317,15 @@ function registerTuiCommand(program: any) {
     });
 }
 
-export = registerTuiCommand;
+const exported: any = registerTuiCommand;
+exported._private = {
+  normalizeProvider,
+  parseExplicitProvider,
+  providerLabel,
+  providerBaseUrl,
+  providerModel,
+  providerNeedsApiKey,
+  SUPPORTED_PROVIDERS
+};
+
+export = exported;

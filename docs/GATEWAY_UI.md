@@ -20,7 +20,7 @@ Supported workflow categories:
 - Developer operations (auth status, token debug, webhook subscription checks)
 
 Root `/` is disabled by default in current builds.
-Bundled Studio UI is served at `/studio/app` and contextual guidance is served at `/studio` (or `/studio/context`).
+Studio entry route `/studio` redirects to the main Studio app at `/studio/app/`.
 If you want gateway to serve additional static Studio assets, set:
 
 - `SOCIAL_STUDIO_ASSET_DIRS=<comma-separated-absolute-or-relative-dirs>`
@@ -29,8 +29,8 @@ Each directory must be inside allowed gateway roots (project root / configured C
 
 Studio routes:
 
-- `GET /studio` or `GET /studio/context` (health/auth/readiness-aware launch page)
-- `GET /studio/app` (bundled Studio frontend SPA)
+- `GET /studio` (redirect to the Studio app)
+- `GET /studio/app/` (primary Studio frontend)
 
 ## Endpoints
 
@@ -50,6 +50,7 @@ Studio routes:
 - `POST /api/sdk/actions/plan`
 - `POST /api/sdk/actions/execute`
 - `GET /api/platform/distribution`
+- `GET /api/self-host/admin`
 - `POST /api/orchestrate`
 - `POST /api/keys`
 - `GET /api/keys`
@@ -90,6 +91,13 @@ Studio routes:
 - `POST /api/cli/execute`
 - `WS /ws`
 
+Browser automation note:
+
+- Hosted tool catalog now includes `browser.*` function-calling tools (`browser.session_create`, `browser.goto`, `browser.click`, `browser.type`, `browser.press`, `browser.wait_for`, `browser.extract_text`, `browser.screenshot`, `browser.session_close`).
+- Install runtime dependency before using interactive browser tools:
+  - `npm install playwright`
+  - `npx playwright install chromium`
+
 ## SDK Contract
 
 `/api/sdk/*` routes return a stable envelope:
@@ -121,7 +129,7 @@ For medium/high-risk actions:
 
 Sessions are persisted through the chat memory layer:
 
-- storage path: `~/.social-cli/chat/sessions/*.json`
+- storage path: `~/.social-flow/chat/sessions/*.json`
 - resumed automatically when a known `sessionId` is provided
 
 ## Safety
@@ -129,6 +137,16 @@ Sessions are persisted through the chat memory layer:
 - No shell execution in gateway action flow
 - Uses `lib/chat/agent.js` + `lib/ai/executor.js`
 - Pending actions require explicit conversational confirmation (`yes`/`no`)
+
+## Self-Hosted Admin Snapshot
+
+`GET /api/self-host/admin` returns a deployment-oriented snapshot intended for the Studio admin screen and operator diagnostics. It includes:
+
+- gateway version, runtime, and base URL
+- security posture (`x-gateway-key`, CORS, rate limiting, hosted vault bootstrap)
+- storage paths for config, logs, hosted data, recipes, triggers, webchat, Baileys, and ops state
+- actionable setup/hardening checks
+- operator commands for doctor, status, start, Studio launch, upgrade, and backup
 
 ## Railway + Frontend
 
@@ -145,9 +163,9 @@ Frontend requirements:
 - Use `wss://<gateway-domain>/ws?gatewayKey=<SOCIAL_GATEWAY_API_KEY>` for WebSocket auth.
 - Public webchat endpoints (`/api/webchat/public/*`) and health route (`/api/health`) remain unauthenticated.
 
-## External Starter Screens
+## Studio Frontend
 
-An external starter UI (multi-screen, agentic flow) is available at:
+The Studio frontend source lives at:
 
 - `docs/agentic-frontend/`
 
@@ -158,6 +176,8 @@ It includes:
 - Approvals Center
 - Ads Diagnosis
 - Ops Launchpad
+- Setup Concierge
+- Workspace Admin
 
 ## Files
 
@@ -173,6 +193,6 @@ It includes:
 
 Default behavior:
 
-- Without frontend overrides, `social studio` opens bundled app route: `/studio/app`
-- Context landing remains reachable at `/studio`
+- Without frontend overrides, `social studio` opens the Studio app route: `/studio/app/`
+- `/studio` remains the human-friendly entry route and redirects to `/studio/app/`
 

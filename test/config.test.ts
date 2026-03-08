@@ -41,6 +41,25 @@ module.exports = [
     })
   },
   {
+    name: 'legacy social-cli config migrates into .social-flow',
+    fn: () => withTempHome((dir) => {
+      const legacy = {
+        apiVersion: 'v20.0',
+        defaultApi: 'facebook',
+        tokens: { facebook: 'EAAB_SOCIAL_CLI' }
+      };
+
+      const legacyPath = path.join(dir, '.social-cli', 'config.json');
+      fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
+      fs.writeFileSync(legacyPath, JSON.stringify(legacy, null, 2), 'utf8');
+
+      const { ConfigManager } = configSingleton;
+      const cfg = new ConfigManager();
+      assert.equal(cfg.getToken('facebook'), 'EAAB_SOCIAL_CLI');
+      assert.equal(fs.existsSync(path.join(dir, '.social-flow', 'config.json')), true);
+    })
+  },
+  {
     name: 'legacy config migrates into profiles.default',
     fn: () => withTempHome((dir) => {
       const legacy = {

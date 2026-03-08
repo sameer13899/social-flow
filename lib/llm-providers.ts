@@ -47,6 +47,7 @@ function resolveApiKeyForProvider(provider, configuredKey) {
 
 function hasProviderCredential(provider, configuredKey) {
   const p = normalizeProvider(provider);
+  if (p === 'ollama') return true;
   return Boolean(resolveApiKeyForProvider(p, configuredKey));
 }
 
@@ -72,6 +73,10 @@ function extractTextFromGemini(payload) {
   const parts = payload?.candidates?.[0]?.content?.parts;
   if (!Array.isArray(parts)) return '';
   return parts.map((p) => String(p.text || '')).join('\n').trim();
+}
+
+function extractTextFromOllama(payload) {
+  return String(payload?.message?.content || payload?.response || '').trim();
 }
 
 async function chatComplete({
@@ -120,7 +125,7 @@ async function chatComplete({
       'Content-Type': 'application/json'
     };
     const referer = process.env.SOCIAL_OPENROUTER_SITE_URL || process.env.OPENROUTER_SITE_URL || '';
-    const title = process.env.SOCIAL_OPENROUTER_APP_NAME || process.env.OPENROUTER_APP_NAME || 'social-cli';
+    const title = process.env.SOCIAL_OPENROUTER_APP_NAME || process.env.OPENROUTER_APP_NAME || 'social-flow';
     if (referer) headers['HTTP-Referer'] = referer;
     if (title) headers['X-Title'] = title;
 
@@ -200,7 +205,24 @@ async function chatComplete({
   }
 
   if (p === 'ollama') {
-    throw new Error('Provider "ollama" is disabled. Configure a cloud provider with a valid API key.');
+    const base = sanitizeBase(process.env.SOCIAL_OLLAMA_BASE_URL || process.env.OLLAMA_BASE_URL, 'http://127.0.0.1:11434');
+    const res = await axios.post(`${base}/api/chat`, {
+      model: finalModel,
+      stream: false,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ],
+      options: {
+        temperature
+      }
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: timeoutMs
+    });
+    return extractTextFromOllama(res?.data);
   }
 
   throw new Error(`Unsupported provider: ${p}`);

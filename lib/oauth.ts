@@ -9,7 +9,7 @@ function pickPort() {
   return 0;
 }
 
-async function oauthLogin({ apiVersion, appId, appSecret, scopes }) {
+async function oauthLogin({ apiVersion, appId, appSecret, scopes, browserSession }) {
   const state = crypto.randomBytes(16).toString('hex');
 
   const server = http.createServer();
@@ -64,7 +64,11 @@ async function oauthLogin({ apiVersion, appId, appSecret, scopes }) {
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('scope', (scopes || []).join(','));
 
-  await openUrl(authUrl.toString());
+  if (browserSession && typeof browserSession.goto === 'function') {
+    await browserSession.goto(authUrl.toString());
+  } else {
+    await openUrl(authUrl.toString());
+  }
 
   let code;
   try {

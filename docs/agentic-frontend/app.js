@@ -1,7 +1,28 @@
 const STORAGE_KEY = "social_flow_agentic_frontend_v1";
 const REFRESH_INTERVAL_MS = 30000;
+
+function defaultGatewayBaseUrl() {
+  const injectedUrl = String(window.__SOCIAL_FLOW_GATEWAY__?.url || "").trim();
+  if (injectedUrl) {
+    try {
+      return new URL(injectedUrl).toString().replace(/\/$/, "");
+    } catch {
+      // ignore malformed injected value and fall through
+    }
+  }
+
+  const locationBase = `${window.location.protocol}//${window.location.host}`;
+  const host = String(window.location.hostname || "").toLowerCase();
+  const port = String(window.location.port || "");
+  if ((host === "127.0.0.1" || host === "localhost") && port === "4173") {
+    return `${window.location.protocol}//${host}:1310`;
+  }
+
+  return locationBase;
+}
+
 const DEFAULT_CONFIG = {
-  baseUrl: `${window.location.protocol}//${window.location.host}`,
+  baseUrl: defaultGatewayBaseUrl(),
   apiKey: "",
   userApiKey: "",
   workspace: "default",
@@ -14,7 +35,10 @@ const state = {
   chatSessionId: "",
   pendingActions: [],
   ws: null,
-  wsEvents: []
+  wsEvents: [],
+  setupSnapshot: null,
+  setupDraftInitialized: false,
+  adminSnapshot: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +47,14 @@ const nodes = {
   workspacePill: $("workspace-pill"),
   sessionPill: $("session-pill"),
   toastStack: $("toast-stack"),
+  sideRail: document.querySelector(".side-rail"),
+  sidebarToggle: $("sidebar-toggle"),
+  sidebarScrim: $("sidebar-scrim"),
+  navDrawers: Array.from(document.querySelectorAll(".nav-drawer")),
+  navDrawerToggles: Array.from(document.querySelectorAll(".nav-drawer-toggle")),
+  viewKicker: $("view-kicker"),
+  viewTitle: $("view-title"),
+  viewSummary: $("view-summary"),
 
   screenLinks: Array.from(document.querySelectorAll(".screen-link")),
   screens: Array.from(document.querySelectorAll(".screen")),
@@ -86,6 +118,41 @@ const nodes = {
   generateHandoff: $("generate-handoff"),
   launchpadReadiness: $("launchpad-readiness"),
   launchpadOutput: $("launchpad-output"),
+
+  setupMetrics: $("setup-metrics"),
+  setupChecklist: $("setup-checklist"),
+  setupDefaultApi: $("setup-default-api"),
+  setupFacebookToken: $("setup-facebook-token"),
+  setupInstagramToken: $("setup-instagram-token"),
+  setupWhatsappToken: $("setup-whatsapp-token"),
+  setupAppId: $("setup-app-id"),
+  setupAppSecret: $("setup-app-secret"),
+  setupAgentProvider: $("setup-agent-provider"),
+  setupAgentModel: $("setup-agent-model"),
+  setupAgentApiKey: $("setup-agent-api-key"),
+  setupSave: $("setup-save"),
+  setupFinish: $("setup-finish"),
+  setupReload: $("setup-reload"),
+  setupOutput: $("setup-output"),
+
+  adminReload: $("admin-reload"),
+  adminMetrics: $("admin-metrics"),
+  adminChecks: $("admin-checks"),
+  adminPaths: $("admin-paths"),
+  adminPlaybook: $("admin-playbook"),
+  adminInviteRole: $("admin-invite-role"),
+  adminInviteHours: $("admin-invite-hours"),
+  adminInviteBaseUrl: $("admin-invite-base-url"),
+  adminInviteCreate: $("admin-invite-create"),
+  adminTeamReload: $("admin-team-reload"),
+  adminInviteStats: $("admin-invite-stats"),
+  adminRolesList: $("admin-roles-list"),
+  adminInvitesList: $("admin-invites-list"),
+  adminActivityLimit: $("admin-activity-limit"),
+  adminActivityReload: $("admin-activity-reload"),
+  adminActivityExport: $("admin-activity-export"),
+  adminActivityList: $("admin-activity-list"),
+  adminOutput: $("admin-output"),
 
   keyService: $("key-service"),
   keyLabel: $("key-label"),
@@ -165,6 +232,99 @@ const nodes = {
   logsOutput: $("logs-output")
 };
 
+const SCREEN_META = {
+  command: {
+    group: "mission",
+    kicker: "Mission Control",
+    title: "Command Deck",
+    summary: "A single at-a-glance surface for readiness, risk, and workload pressure."
+  },
+  copilot: {
+    group: "mission",
+    kicker: "Mission Control",
+    title: "Agent Copilot",
+    summary: "Conversational control with live execution events and approval-safe plan execution."
+  },
+  approvals: {
+    group: "mission",
+    kicker: "Mission Control",
+    title: "Approvals Center",
+    summary: "Resolve pending decisions quickly with context and audit-safe notes."
+  },
+  diagnose: {
+    group: "mission",
+    kicker: "Mission Control",
+    title: "Ads Diagnosis",
+    summary: "Run guided diagnosis commands from a user-friendly form and capture immediate operator actions."
+  },
+  launchpad: {
+    group: "ops",
+    kicker: "Operations",
+    title: "Ops Launchpad",
+    summary: "One-click operational flows for team onboarding, guardrails, and recurring routines."
+  },
+  setup: {
+    group: "ops",
+    kicker: "Operations",
+    title: "Setup Concierge",
+    summary: "Connect tokens, app credentials, and AI providers without editing process environment variables."
+  },
+  admin: {
+    group: "ops",
+    kicker: "Operations",
+    title: "Workspace Admin",
+    summary: "Self-hosted deployment confidence for hardening, storage, team access, and operator activity."
+  },
+  logs: {
+    group: "ops",
+    kicker: "Operations",
+    title: "Logs",
+    summary: "Structured execution logs, traces, and hosted runtime history."
+  },
+  keys: {
+    group: "builder",
+    kicker: "Builder",
+    title: "BYOK Keys",
+    summary: "Store per-user encrypted provider keys with masked reads and fast operator controls."
+  },
+  agents: {
+    group: "builder",
+    kicker: "Builder",
+    title: "Agents",
+    summary: "Manage built-in specialists and custom crews from a visual registry."
+  },
+  tools: {
+    group: "builder",
+    kicker: "Builder",
+    title: "Tool Registry",
+    summary: "Typed callable tools with service-aligned contracts and descriptions."
+  },
+  recipes: {
+    group: "builder",
+    kicker: "Builder",
+    title: "Recipes",
+    summary: "Compose saved workflow stacks, execute them, and inspect outputs in one surface."
+  },
+  triggers: {
+    group: "builder",
+    kicker: "Builder",
+    title: "Triggers",
+    summary: "Map cron, webhook, and event entry points to reusable recipes."
+  },
+  webchat: {
+    group: "channels",
+    kicker: "Channels",
+    title: "Webchat Channel",
+    summary: "Operate widget keys, public sessions, and operator replies from one modular inbox."
+  },
+  baileys: {
+    group: "channels",
+    kicker: "Channels",
+    title: "Baileys Channel",
+    summary: "Manage WhatsApp Web sessions, QR flows, and message history with clear operator controls."
+  }
+};
+
 function normalizeBaseUrl(raw) {
   const fallback = DEFAULT_CONFIG.baseUrl;
   const value = String(raw || "").trim();
@@ -184,7 +344,20 @@ function loadConfig() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
-    return { ...DEFAULT_CONFIG, ...(parsed || {}) };
+    const merged = { ...DEFAULT_CONFIG, ...(parsed || {}) };
+    merged.baseUrl = normalizeBaseUrl(merged.baseUrl);
+
+    // Auto-repair the common local static-host misconfiguration where API calls
+    // are pointed at the frontend host (:4173) instead of the gateway (:1310).
+    const host = String(window.location.hostname || "").toLowerCase();
+    const isLocalStaticHost = (host === "127.0.0.1" || host === "localhost")
+      && String(window.location.port || "") === "4173";
+    const usingFrontendAsGateway = /https?:\/\/(127\.0\.0\.1|localhost):4173$/i.test(merged.baseUrl);
+    if (isLocalStaticHost && usingFrontendAsGateway) {
+      merged.baseUrl = DEFAULT_CONFIG.baseUrl;
+    }
+
+    return merged;
   } catch {
     return { ...DEFAULT_CONFIG };
   }
@@ -216,6 +389,9 @@ function pushConfigToInputs() {
   nodes.cfgOperatorName.value = state.config.operatorName;
   nodes.operatorId.value = state.config.operatorId;
   nodes.operatorName.value = state.config.operatorName;
+  if (!String(nodes.adminInviteBaseUrl.value || "").trim()) {
+    nodes.adminInviteBaseUrl.value = state.config.baseUrl;
+  }
   nodes.workspacePill.textContent = `Workspace: ${state.config.workspace || "default"}`;
 }
 
@@ -290,6 +466,695 @@ async function requestApi(pathname, { method = "GET", body = null } = {}) {
 function errorText(error, fallback = "Request failed") {
   return String(error?.payload?.error || error?.message || fallback);
 }
+
+function defaultAgentModel(provider) {
+  const normalized = String(provider || "openai").trim().toLowerCase();
+  if (normalized === "ollama") return "qwen2.5:7b";
+  if (normalized === "anthropic") return "claude-3-5-sonnet-latest";
+  if (normalized === "openrouter") return "openai/gpt-4o-mini";
+  if (normalized === "xai") return "grok-2-latest";
+  if (normalized === "gemini") return "gemini-1.5-pro";
+  return "gpt-4o-mini";
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value || "");
+  try {
+    return date.toLocaleString([], {
+      dateStyle: "medium",
+      timeStyle: "short"
+    });
+  } catch {
+    return date.toLocaleString();
+  }
+}
+
+function labelFromKey(value) {
+  return String(value || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatDurationLabel(value) {
+  const raw = String(value || "").trim();
+  if (raw) return raw;
+  return "--";
+}
+
+function isCompactNavigation() {
+  return window.matchMedia("(max-width: 1040px)").matches;
+}
+
+function screenExists(target) {
+  return nodes.screens.some((screen) => screen.dataset.screen === target);
+}
+
+function resolveScreenTarget(raw) {
+  const target = String(raw || "").trim().replace(/^#/, "").toLowerCase();
+  return screenExists(target) ? target : "command";
+}
+
+function updateViewHeader(target) {
+  const meta = SCREEN_META[target] || SCREEN_META.command;
+  nodes.viewKicker.textContent = meta.kicker;
+  nodes.viewTitle.textContent = meta.title;
+  nodes.viewSummary.textContent = meta.summary;
+  document.title = `Social Flow Studio · ${meta.title}`;
+}
+
+function setDrawerState(drawer, open) {
+  if (!drawer) return;
+  drawer.classList.toggle("is-open", open);
+  const toggle = drawer.querySelector(".nav-drawer-toggle");
+  if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function openDrawer(group, { exclusive = false } = {}) {
+  nodes.navDrawers.forEach((drawer) => {
+    const isMatch = drawer.dataset.navDrawer === group;
+    if (isMatch) {
+      setDrawerState(drawer, true);
+      return;
+    }
+    if (exclusive) setDrawerState(drawer, false);
+  });
+}
+
+function closeSidebar() {
+  document.body.classList.remove("sidebar-open");
+  nodes.sidebarToggle?.setAttribute("aria-expanded", "false");
+}
+
+function openSidebar() {
+  if (!isCompactNavigation()) return;
+  document.body.classList.add("sidebar-open");
+  nodes.sidebarToggle?.setAttribute("aria-expanded", "true");
+  const activeGroup = nodes.screenLinks.find((button) => button.classList.contains("active"))?.dataset.navGroup;
+  if (activeGroup) openDrawer(activeGroup, { exclusive: false });
+}
+
+function toggleSidebar() {
+  if (document.body.classList.contains("sidebar-open")) {
+    closeSidebar();
+    return;
+  }
+  openSidebar();
+}
+
+function syncScreenHistory(target, historyMode = "push") {
+  const nextHash = `#${target}`;
+  if (window.location.hash === nextHash) return;
+  const action = historyMode === "replace" ? "replaceState" : "pushState";
+  window.history[action](null, "", nextHash);
+}
+
+function iconSvg(name) {
+  const icons = {
+    spark: `<svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"/><path d="M19 4l.8 2.2L22 7l-2.2.8L19 10l-.8-2.2L16 7l2.2-.8L19 4Z"/><path d="M5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14Z"/></svg>`,
+    shield: `<svg viewBox="0 0 24 24"><path d="M12 3l7 4v5c0 4.2-2.4 7.2-7 9-4.6-1.8-7-4.8-7-9V7l7-4Z"/><path d="M8.5 12.5l2.2 2.2 4.8-5"/></svg>`,
+    diagnose: `<svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 16V9"/><path d="M12 16V5"/><path d="M17 16v-4"/></svg>`,
+    rocket: `<svg viewBox="0 0 24 24"><path d="M5 19h14"/><path d="M8 16l4-11 4 11"/><path d="M9.5 12h5"/></svg>`,
+    setup: `<svg viewBox="0 0 24 24"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="M6.5 6.5l2.8 2.8"/><path d="M14.7 14.7l2.8 2.8"/><path d="M17.5 6.5l-2.8 2.8"/><path d="M9.3 14.7l-2.8 2.8"/><circle cx="12" cy="12" r="3.5"/></svg>`,
+    key: `<svg viewBox="0 0 24 24"><circle cx="8.5" cy="12" r="3.5"/><path d="M12 12h8"/><path d="M17 12v3"/><path d="M20 12v2"/></svg>`,
+    agent: `<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 19c1.5-3 4-4.5 7-4.5S17.5 16 19 19"/><path d="M4 7h2"/><path d="M18 7h2"/></svg>`,
+    router: `<svg viewBox="0 0 24 24"><path d="M6 6.5h5.5A2.5 2.5 0 0 1 14 9v0A2.5 2.5 0 0 0 16.5 11.5H18"/><path d="M18 11.5l-2.5-2.5"/><path d="M18 11.5L15.5 14"/><path d="M6 17.5h5.5A2.5 2.5 0 0 0 14 15v0a2.5 2.5 0 0 1 2.5-2.5H18"/></svg>`,
+    marketing: `<svg viewBox="0 0 24 24"><path d="M4 13.5V10a1.5 1.5 0 0 1 1.5-1.5H9l6-3v13l-6-3H5.5A1.5 1.5 0 0 1 4 13.5Z"/><path d="M18 9.5a4.5 4.5 0 0 1 0 5"/><path d="M20 8a7 7 0 0 1 0 8"/></svg>`,
+    messaging: `<svg viewBox="0 0 24 24"><path d="M5 6h14v9H9l-4 4Z"/><path d="M9 10h6"/><path d="M9 13h4"/></svg>`,
+    analytics: `<svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 16V9"/><path d="M12 16V5"/><path d="M17 16v-7"/></svg>`,
+    ops: `<svg viewBox="0 0 24 24"><path d="M12 3l2.4 1.4 2.8-.2.8 2.7 2.3 1.6-1.1 2.5 1.1 2.5-2.3 1.6-.8 2.7-2.8-.2L12 21l-2.4-1.4-2.8.2-.8-2.7-2.3-1.6 1.1-2.5-1.1-2.5 2.3-1.6.8-2.7 2.8.2L12 3Z"/><path d="M9.5 12.2l1.6 1.6 3.4-3.5"/></svg>`,
+    browser: `<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M3.5 9h17"/><path d="M7 7.2h.01"/><path d="M10 7.2h.01"/><path d="M13 7.2h.01"/></svg>`,
+    tool: `<svg viewBox="0 0 24 24"><path d="M14 5l5 5"/><path d="M10 19l-5-5"/><path d="M13 6l-7 7"/><path d="M18 11l-7 7"/></svg>`,
+    recipe: `<svg viewBox="0 0 24 24"><path d="M7 4.5h10"/><path d="M7 9.5h10"/><path d="M7 14.5h6"/><path d="M17 17.5l2 2 3-4"/></svg>`,
+    trigger: `<svg viewBox="0 0 24 24"><path d="M12 3v5"/><path d="M12 16v5"/><path d="M5 12h5"/><path d="M14 12h5"/><circle cx="12" cy="12" r="4"/></svg>`,
+    webchat: `<svg viewBox="0 0 24 24"><path d="M5 6h14v9H9l-4 4Z"/><path d="M9 10h6"/><path d="M9 13h4"/></svg>`,
+    baileys: `<svg viewBox="0 0 24 24"><path d="M7 5.5h10A3.5 3.5 0 0 1 20.5 9v5A3.5 3.5 0 0 1 17 17.5H9l-4 3v-4A3.5 3.5 0 0 1 3.5 14V9A3.5 3.5 0 0 1 7 5.5Z"/><path d="M9 10h6"/><path d="M9 13h5"/></svg>`,
+    logs: `<svg viewBox="0 0 24 24"><path d="M6 5.5h12"/><path d="M6 12h12"/><path d="M6 18.5h8"/></svg>`,
+    command: `<svg viewBox="0 0 24 24"><path d="M4 6.5h16"/><path d="M4 12h16"/><path d="M4 17.5h10"/><path d="M17 15l3 3-3 3"/></svg>`
+  };
+  return icons[name] || icons.spark;
+}
+
+function compactList(values, limit = 4) {
+  const list = Array.isArray(values)
+    ? values.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  if (list.length <= limit) return list;
+  return [...list.slice(0, limit), `+${list.length - limit} more`];
+}
+
+function inferToolIcon(service, key) {
+  const text = `${service || ""} ${key || ""}`.toLowerCase();
+  if (text.includes("browser")) return "browser";
+  if (text.includes("baileys") || text.includes("whatsapp")) return "baileys";
+  if (text.includes("webchat")) return "webchat";
+  if (text.includes("meta")) return "marketing";
+  if (text.includes("gateway") || text.includes("log")) return "logs";
+  if (text.includes("cli")) return "ops";
+  return "tool";
+}
+
+function inferAgentIcon(agent = {}) {
+  const slug = String(agent.slug || "").toLowerCase();
+  if (slug.includes("router")) return "router";
+  if (slug.includes("marketing")) return "marketing";
+  if (slug.includes("messaging")) return "messaging";
+  if (slug.includes("analytics")) return "analytics";
+  if (slug.includes("ops")) return "ops";
+  if (slug.includes("browser")) return "browser";
+  if (slug.includes("webchat")) return "webchat";
+  if (slug.includes("baileys") || slug.includes("whatsapp")) return "baileys";
+  return "agent";
+}
+
+function inferSetupIcon(meta, title = "") {
+  const status = String(meta || "").toLowerCase();
+  const label = String(title || "").toLowerCase();
+  if (status === "ready" || status === "complete") return "shield";
+  if (label.includes("app") || label.includes("onboarding")) return "setup";
+  if (label.includes("agent")) return "agent";
+  if (label.includes("token")) return "key";
+  return status === "required" ? "trigger" : "spark";
+}
+
+function writeSetupOutput(title, payload) {
+  nodes.setupOutput.textContent = `${title}\n\n${pretty(payload)}`;
+}
+
+function writeAdminOutput(title, payload) {
+  nodes.adminOutput.textContent = `${title}\n\n${pretty(payload)}`;
+}
+
+function makeMetricCard(label, value) {
+  const card = document.createElement("article");
+  card.className = "metric-card";
+  const labelNode = document.createElement("p");
+  labelNode.className = "metric-label";
+  labelNode.textContent = label;
+  const valueNode = document.createElement("p");
+  valueNode.className = "metric-value";
+  valueNode.textContent = value;
+  card.appendChild(labelNode);
+  card.appendChild(valueNode);
+  return card;
+}
+
+function setupSecretPlaceholder(prefix, configured, preview = "") {
+  if (configured) {
+    return preview ? `${prefix} saved (${preview}). Paste a new value to replace it.` : `${prefix} saved. Paste a new value to replace it.`;
+  }
+  return `Paste ${prefix.toLowerCase()}`;
+}
+
+function populateSetupForm(snapshot, { force = false } = {}) {
+  const cfg = snapshot?.config || {};
+  if (!force && state.setupDraftInitialized) return;
+  nodes.setupDefaultApi.value = String(cfg.defaultApi || "facebook");
+  nodes.setupAppId.value = String(cfg?.app?.appId || "");
+  const provider = String(cfg?.agent?.provider || "openai");
+  nodes.setupAgentProvider.value = provider;
+  nodes.setupAgentProvider.dataset.lastProvider = provider;
+  nodes.setupAgentModel.value = String(cfg?.agent?.model || defaultAgentModel(provider));
+  state.setupDraftInitialized = true;
+}
+
+function clearSetupSensitiveInputs() {
+  nodes.setupFacebookToken.value = "";
+  nodes.setupInstagramToken.value = "";
+  nodes.setupWhatsappToken.value = "";
+  nodes.setupAppSecret.value = "";
+  nodes.setupAgentApiKey.value = "";
+}
+
+function applySetupPlaceholders(snapshot) {
+  const cfg = snapshot?.config || {};
+  nodes.setupFacebookToken.placeholder = setupSecretPlaceholder(
+    "Facebook token",
+    Boolean(cfg?.tokens?.facebook?.configured),
+    String(cfg?.tokens?.facebook?.preview || "")
+  );
+  nodes.setupInstagramToken.placeholder = setupSecretPlaceholder(
+    "Instagram token",
+    Boolean(cfg?.tokens?.instagram?.configured),
+    String(cfg?.tokens?.instagram?.preview || "")
+  );
+  nodes.setupWhatsappToken.placeholder = setupSecretPlaceholder(
+    "WhatsApp token",
+    Boolean(cfg?.tokens?.whatsapp?.configured),
+    String(cfg?.tokens?.whatsapp?.preview || "")
+  );
+  nodes.setupAppSecret.placeholder = setupSecretPlaceholder(
+    "App Secret",
+    Boolean(cfg?.app?.appSecretConfigured)
+  );
+  nodes.setupAgentApiKey.placeholder = setupSecretPlaceholder(
+    "Agent API key",
+    Boolean(cfg?.agent?.apiKeyConfigured)
+  );
+}
+
+function renderSetupMetrics(snapshot) {
+  const report = snapshot?.readiness || {};
+  const cfg = snapshot?.config || {};
+  const blockers = Array.isArray(report.blockers) ? report.blockers : [];
+  const warnings = Array.isArray(report.warnings) ? report.warnings : [];
+  const tracksReady = [
+    Boolean(cfg?.tokens?.[cfg?.defaultApi || "facebook"]?.configured),
+    Boolean(cfg?.app?.appId) && Boolean(cfg?.app?.appSecretConfigured),
+    Boolean(cfg?.agent?.apiKeyConfigured),
+    Boolean(cfg?.onboarding?.completed)
+  ].filter(Boolean).length;
+
+  nodes.setupMetrics.innerHTML = "";
+  [
+    { label: "Core Setup", value: report.ok ? "Ready" : "Action" },
+    { label: "Blockers", value: String(blockers.length) },
+    { label: "Warnings", value: String(warnings.length) },
+    { label: "Tracks Ready", value: `${tracksReady}/4` }
+  ].forEach((item) => nodes.setupMetrics.appendChild(makeMetricCard(item.label, item.value)));
+}
+
+function renderSetupChecklist(snapshot) {
+  const cfg = snapshot?.config || {};
+  const report = snapshot?.readiness || {};
+  const blockers = Array.isArray(report.blockers) ? report.blockers : [];
+  const warnings = Array.isArray(report.warnings) ? report.warnings : [];
+  const defaultApi = String(cfg.defaultApi || "facebook");
+
+  const rows = [
+    {
+      title: `Default ${defaultApi} token`,
+      meta: cfg?.tokens?.[defaultApi]?.configured ? "READY" : "ACTION",
+      body: cfg?.tokens?.[defaultApi]?.configured
+        ? `Saved ${cfg.tokens[defaultApi].preview || "token"} for the active API.`
+        : `Paste a ${defaultApi} token so the agent can act without env vars.`
+    },
+    {
+      title: "Meta app credentials",
+      meta: cfg?.app?.appId && cfg?.app?.appSecretConfigured ? "READY" : "RECOMMENDED",
+      body: cfg?.app?.appId
+        ? `App ID ${cfg.app.appId}${cfg.app.appSecretConfigured ? " with secret saved." : " saved, but App Secret is still missing."}`
+        : "Save App ID and App Secret to unlock OAuth and advanced diagnostics."
+    },
+    {
+      title: "Agent AI provider",
+      meta: cfg?.agent?.apiKeyConfigured ? "READY" : "ACTION",
+      body: cfg?.agent?.apiKeyConfigured
+        ? `${cfg.agent.provider || "openai"} is configured for Copilot${cfg.agent.model ? ` using ${cfg.agent.model}` : ""}.`
+        : `Save a ${cfg?.agent?.provider || "openai"} API key so non-technical users can use Copilot without env vars.`
+    },
+    {
+      title: "Onboarding state",
+      meta: cfg?.onboarding?.completed ? "COMPLETE" : "PENDING",
+      body: cfg?.onboarding?.completed
+        ? `Marked complete${cfg?.onboarding?.completedAt ? ` at ${cfg.onboarding.completedAt}` : ""}.`
+        : "Save required setup, then use Save + Finish Setup to mark onboarding complete."
+    }
+  ];
+
+  blockers.forEach((item) => {
+    rows.push({
+      title: `Blocker: ${item.code || "setup"}`,
+      meta: "REQUIRED",
+      body: `${item.message || ""}${item.fix ? ` Next: ${item.fix}` : ""}`.trim()
+    });
+  });
+
+  warnings.forEach((item) => {
+    rows.push({
+      title: `Recommended: ${item.code || "warning"}`,
+      meta: "OPTIONAL",
+      body: `${item.message || ""}${item.fix ? ` Next: ${item.fix}` : ""}`.trim()
+    });
+  });
+
+  renderStackList(nodes.setupChecklist, rows, "No setup guidance available.", (row) => makeHostedCard({
+    title: row.title,
+    eyebrow: row.meta,
+    body: row.body,
+    icon: inferSetupIcon(row.meta, row.title)
+  }));
+}
+
+function applySetupSnapshot(snapshot, options = {}) {
+  state.setupSnapshot = snapshot;
+  renderSetupMetrics(snapshot);
+  renderSetupChecklist(snapshot);
+  applySetupPlaceholders(snapshot);
+  populateSetupForm(snapshot, { force: Boolean(options.forcePopulate) });
+}
+
+async function loadSetupSnapshot(options = {}) {
+  try {
+    const out = await requestApi("/api/config");
+    applySetupSnapshot(out, options);
+    if (options.writeOutput) writeSetupOutput("Saved setup loaded", out);
+    return out;
+  } catch (error) {
+    nodes.setupChecklist.textContent = `Unable to load setup: ${errorText(error)}`;
+    if (nodes.setupMetrics) {
+      nodes.setupMetrics.innerHTML = "";
+      nodes.setupMetrics.appendChild(makeMetricCard("Core Setup", "Error"));
+    }
+    throw error;
+  }
+}
+
+function buildSetupPayload() {
+  const body = {
+    defaultApi: String(nodes.setupDefaultApi.value || "facebook").trim().toLowerCase(),
+    tokens: {},
+    app: {},
+    agent: {}
+  };
+
+  const facebook = String(nodes.setupFacebookToken.value || "").trim();
+  const instagram = String(nodes.setupInstagramToken.value || "").trim();
+  const whatsapp = String(nodes.setupWhatsappToken.value || "").trim();
+  const appId = String(nodes.setupAppId.value || "").trim();
+  const appSecret = String(nodes.setupAppSecret.value || "").trim();
+  const provider = String(nodes.setupAgentProvider.value || "openai").trim().toLowerCase();
+  const model = String(nodes.setupAgentModel.value || "").trim();
+  const apiKey = String(nodes.setupAgentApiKey.value || "").trim();
+
+  if (facebook) body.tokens.facebook = facebook;
+  if (instagram) body.tokens.instagram = instagram;
+  if (whatsapp) body.tokens.whatsapp = whatsapp;
+  if (appId) body.app.appId = appId;
+  if (appSecret) body.app.appSecret = appSecret;
+  if (provider) body.agent.provider = provider;
+  if (model) body.agent.model = model;
+  if (apiKey) body.agent.apiKey = apiKey;
+
+  return body;
+}
+
+async function saveSetupConfiguration({ markComplete = false } = {}) {
+  const payload = buildSetupPayload();
+  const out = await requestApi("/api/config/update", {
+    method: "POST",
+    body: payload
+  });
+  clearSetupSensitiveInputs();
+  applySetupSnapshot(out, { forcePopulate: true });
+  writeSetupOutput("Setup saved", out);
+
+  if (!markComplete) {
+    toast("Setup saved.", "ok");
+    return out;
+  }
+
+  const report = out?.readiness || {};
+  if (report.ok !== true) {
+    toast("Core setup still has blockers. Finish those before marking onboarding complete.", "err");
+    return out;
+  }
+
+  const finish = await requestApi("/api/config/update", {
+    method: "POST",
+    body: { onboarding: { completed: true } }
+  });
+  applySetupSnapshot(finish, { forcePopulate: true });
+  writeSetupOutput("Setup saved and onboarding completed", finish);
+  toast("Setup saved and onboarding completed.", "ok");
+  await refreshAll();
+  return finish;
+}
+
+function syncSetupModelForProvider(force = false) {
+  const provider = String(nodes.setupAgentProvider.value || "openai").trim().toLowerCase();
+  const previous = String(nodes.setupAgentProvider.dataset.lastProvider || provider);
+  const previousDefault = defaultAgentModel(previous);
+  const nextDefault = defaultAgentModel(provider);
+  const currentModel = String(nodes.setupAgentModel.value || "").trim();
+  if (force || !currentModel || currentModel === previousDefault) {
+    nodes.setupAgentModel.value = nextDefault;
+  }
+  nodes.setupAgentModel.placeholder = nextDefault;
+  nodes.setupAgentProvider.dataset.lastProvider = provider;
+}
+
+function renderAdminMetrics(system) {
+  const security = system?.security || {};
+  const setup = system?.setup || {};
+  const runtime = system?.runtime || {};
+  nodes.adminMetrics.innerHTML = "";
+  [
+    { label: "Gateway Version", value: system?.version || "--" },
+    { label: "Uptime", value: formatDurationLabel(runtime.uptime) },
+    { label: "Gateway Guard", value: security.apiKeyRequired ? "Locked" : "Open" },
+    { label: "Studio Assets", value: setup.studioFrontendInstalled ? "Ready" : "Missing" },
+    { label: "Onboarding", value: setup.onboardingCompleted ? "Complete" : "Pending" }
+  ].forEach((item) => nodes.adminMetrics.appendChild(makeMetricCard(item.label, item.value)));
+}
+
+function renderAdminChecks(system) {
+  const rows = Array.isArray(system?.checks) ? system.checks : [];
+  renderStackList(nodes.adminChecks, rows, "No self-hosted checks available.", (row) => makeHostedCard({
+    title: labelFromKey(row.key || "check"),
+    eyebrow: row.ok ? "Ready" : row.severity === "recommended" ? "Recommended" : "Required",
+    meta: row.detail || "",
+    body: row.fix ? `Next: ${row.fix}` : "",
+    icon: row.ok ? "shield" : row.severity === "recommended" ? "spark" : "trigger"
+  }));
+}
+
+function renderAdminPaths(system) {
+  const rows = Array.isArray(system?.paths) ? system.paths : [];
+  renderStackList(nodes.adminPaths, rows, "No storage paths reported.", (row) => makeHostedCard({
+    title: row.label || labelFromKey(row.key || "path"),
+    eyebrow: row.exists ? "Present" : "Missing",
+    body: row.path || "Path unavailable.",
+    chips: [row.key || ""],
+    icon: row.exists ? "shield" : "logs"
+  }));
+}
+
+function renderAdminPlaybook(system) {
+  const runtime = system?.runtime || {};
+  const network = system?.network || {};
+  const commands = system?.commands || {};
+  const nextActions = Array.isArray(system?.nextActions) ? system.nextActions : [];
+  const lines = [
+    `Version: ${system?.version || "--"}`,
+    `Workspace: ${system?.workspace || "--"}`,
+    `Runtime: ${runtime.node || "--"} on ${runtime.platform || "--"} (${runtime.arch || "--"})`,
+    `Gateway URL: ${network.baseUrl || "--"}`,
+    "",
+    "Core Commands:",
+    `  doctor  -> ${commands.doctor || "social doctor"}`,
+    `  status  -> ${commands.status || "social status"}`,
+    `  start   -> ${commands.start || "social start"}`,
+    `  studio  -> ${commands.studio || "social studio"}`,
+    `  upgrade -> ${commands.upgrade || "npm install -g @vishalgojha/social-flow@latest"}`,
+    `  backup  -> ${commands.backup || "Back up the config and hosted data directories."}`
+  ];
+  if (nextActions.length) {
+    lines.push("", "Next Actions:");
+    nextActions.forEach((item) => lines.push(`  - ${item}`));
+  }
+  nodes.adminPlaybook.textContent = lines.join("\n");
+}
+
+function renderAdminInviteStats(stats) {
+  nodes.adminInviteStats.innerHTML = "";
+  [
+    { label: "Active Invites", value: String(stats?.active ?? "--") },
+    { label: "Accepted", value: String(stats?.accepted ?? "--") },
+    { label: "Expired", value: String(stats?.expiredRecent ?? "--") },
+    { label: "Avg Accept", value: Number(stats?.avgAcceptMs || 0) > 0 ? `${Math.round(Number(stats.avgAcceptMs) / 60000)}m` : "--" }
+  ].forEach((item) => nodes.adminInviteStats.appendChild(makeMetricCard(item.label, item.value)));
+}
+
+async function loadSelfHostedAdmin() {
+  try {
+    const out = await requestApi("/api/self-host/admin");
+    const system = out?.system || {};
+    state.adminSnapshot = system;
+    if (!String(nodes.adminInviteBaseUrl.value || "").trim()) {
+      nodes.adminInviteBaseUrl.value = String(system?.network?.baseUrl || state.config.baseUrl || "");
+    }
+    renderAdminMetrics(system);
+    renderAdminChecks(system);
+    renderAdminPaths(system);
+    renderAdminPlaybook(system);
+  } catch (error) {
+    nodes.adminChecks.textContent = `Unable to load admin snapshot: ${errorText(error)}`;
+    nodes.adminPaths.textContent = `Unable to load storage paths: ${errorText(error)}`;
+    nodes.adminPlaybook.textContent = `Unable to load playbook: ${errorText(error)}`;
+  }
+}
+
+async function loadTeamRoles() {
+  try {
+    const out = await requestApi(`/api/team/roles?workspace=${encodeURIComponent(state.config.workspace || "default")}`);
+    const roles = Array.isArray(out?.roles) ? out.roles : [];
+    renderStackList(nodes.adminRolesList, roles, "No team roles assigned yet.", (row) => makeHostedCard({
+      title: row.user || "user",
+      eyebrow: row.role || "viewer",
+      meta: `${row.scope || "workspace"} scope`,
+      body: row.workspaceRole
+        ? `Workspace role ${row.workspaceRole}${row.globalRole ? `, global fallback ${row.globalRole}` : ""}.`
+        : `Global role ${row.globalRole || "viewer"}.`,
+      icon: row.role === "owner" || row.role === "admin" ? "shield" : "agent"
+    }));
+  } catch (error) {
+    nodes.adminRolesList.textContent = `Unable to load roles: ${errorText(error)}`;
+  }
+}
+
+async function loadTeamInvites() {
+  try {
+    const out = await requestApi(`/api/team/invites?workspace=${encodeURIComponent(state.config.workspace || "default")}`);
+    const invites = Array.isArray(out?.invites) ? out.invites : [];
+    renderStackList(nodes.adminInvitesList, invites, "No invites created yet.", (row) => {
+      const card = makeHostedCard({
+        title: row.role || "invite",
+        eyebrow: row.status || "active",
+        meta: row.createdBy ? `created by ${row.createdBy}` : "",
+        body: row.expiresAt
+          ? `Expires ${formatDateTime(row.expiresAt)}${row.acceptedBy ? `. Accepted by ${row.acceptedBy}.` : "."}`
+          : "No expiration recorded.",
+        chips: [
+          row.id || "",
+          row.tokenMasked || "",
+          row.acceptedAt ? `Accepted ${formatDateTime(row.acceptedAt)}` : ""
+        ],
+        icon: row.status === "accepted" ? "shield" : row.status === "active" ? "spark" : "logs"
+      });
+      if (row.status === "active") {
+        const actionRow = document.createElement("div");
+        actionRow.className = "row";
+        const resendBtn = document.createElement("button");
+        resendBtn.type = "button";
+        resendBtn.textContent = "Resend";
+        resendBtn.addEventListener("click", () => resendTeamInvite(row.id));
+        const revokeBtn = document.createElement("button");
+        revokeBtn.type = "button";
+        revokeBtn.className = "secondary";
+        revokeBtn.textContent = "Revoke";
+        revokeBtn.addEventListener("click", () => revokeTeamInvite(row.id));
+        actionRow.appendChild(resendBtn);
+        actionRow.appendChild(revokeBtn);
+        card.appendChild(actionRow);
+      }
+      return card;
+    });
+  } catch (error) {
+    nodes.adminInvitesList.textContent = `Unable to load invites: ${errorText(error)}`;
+  }
+}
+
+async function loadTeamInviteStats() {
+  try {
+    const out = await requestApi(`/api/team/invites/stats?workspace=${encodeURIComponent(state.config.workspace || "default")}&days=30`);
+    renderAdminInviteStats(out?.stats || {});
+  } catch (error) {
+    nodes.adminInviteStats.innerHTML = "";
+    nodes.adminInviteStats.appendChild(makeMetricCard("Invite Stats", "Error"));
+  }
+}
+
+async function loadTeamActivity() {
+  const limit = Math.max(5, Math.min(200, Number(nodes.adminActivityLimit.value || 25) || 25));
+  try {
+    const out = await requestApi(`/api/team/activity?workspace=${encodeURIComponent(state.config.workspace || "default")}&limit=${encodeURIComponent(limit)}`);
+    const rows = Array.isArray(out?.activity) ? out.activity : [];
+    renderStackList(nodes.adminActivityList, rows, "No team activity logged yet.", (row) => makeHostedCard({
+      title: row.summary || row.action || "activity",
+      eyebrow: row.status || "logged",
+      meta: `${row.actor || "system"} • ${formatDateTime(row.createdAt) || row.createdAt || "time unknown"}`,
+      body: row.why || row.action || "",
+      chips: [row.action || "", row.risk || ""],
+      icon: row.status === "success" ? "shield" : row.status === "error" ? "trigger" : "spark"
+    }));
+  } catch (error) {
+    nodes.adminActivityList.textContent = `Unable to load activity: ${errorText(error)}`;
+  }
+}
+
+async function exportTeamActivityJson() {
+  const limit = Math.max(5, Math.min(200, Number(nodes.adminActivityLimit.value || 25) || 25));
+  try {
+    const out = await requestApi(`/api/team/activity/export?workspace=${encodeURIComponent(state.config.workspace || "default")}&format=json&limit=${encodeURIComponent(limit)}`);
+    writeAdminOutput("Team activity exported", out);
+    toast("Team activity exported to output panel.", "ok");
+  } catch (error) {
+    toast(errorText(error, "Failed to export activity"), "err");
+  }
+}
+
+async function createTeamInvite() {
+  try {
+    const role = String(nodes.adminInviteRole.value || "operator").trim();
+    const expiresInHours = Math.max(1, Math.min(720, Number(nodes.adminInviteHours.value || 72) || 72));
+    const baseUrl = String(nodes.adminInviteBaseUrl.value || state.config.baseUrl || "").trim();
+    const out = await requestApi("/api/team/invites", {
+      method: "POST",
+      body: {
+        workspace: state.config.workspace || "default",
+        role,
+        expiresInHours,
+        baseUrl
+      }
+    });
+    writeAdminOutput("Invite created", out?.invite || out);
+    toast("Invite created.", "ok");
+    await Promise.all([loadTeamInvites(), loadTeamInviteStats()]);
+  } catch (error) {
+    toast(errorText(error, "Failed to create invite"), "err");
+  }
+}
+
+async function resendTeamInvite(id) {
+  try {
+    const out = await requestApi("/api/team/invites/resend", {
+      method: "POST",
+      body: {
+        workspace: state.config.workspace || "default",
+        id,
+        baseUrl: String(nodes.adminInviteBaseUrl.value || state.config.baseUrl || "").trim(),
+        expiresInHours: Math.max(1, Math.min(720, Number(nodes.adminInviteHours.value || 72) || 72))
+      }
+    });
+    writeAdminOutput("Invite rotated", out?.invite || out);
+    toast("Invite link rotated.", "ok");
+    await Promise.all([loadTeamInvites(), loadTeamInviteStats()]);
+  } catch (error) {
+    toast(errorText(error, "Failed to rotate invite"), "err");
+  }
+}
+
+async function revokeTeamInvite(id) {
+  try {
+    await requestApi("/api/team/invites/revoke", {
+      method: "POST",
+      body: {
+        workspace: state.config.workspace || "default",
+        id
+      }
+    });
+    toast("Invite revoked.", "ok");
+    await Promise.all([loadTeamInvites(), loadTeamInviteStats()]);
+  } catch (error) {
+    toast(errorText(error, "Failed to revoke invite"), "err");
+  }
+}
+
+async function loadAdminSurface() {
+  await Promise.all([
+    loadSelfHostedAdmin(),
+    loadTeamRoles(),
+    loadTeamInvites(),
+    loadTeamInviteStats(),
+    loadTeamActivity()
+  ]);
+}
+
 function renderReadiness(report) {
   const checks = Array.isArray(report?.checks) ? report.checks : [];
   nodes.readinessList.innerHTML = "";
@@ -740,9 +1605,12 @@ async function refreshLaunchpadReadiness() {
     }
     checks.forEach((check) => {
       const status = check.ok === true ? "OK" : check.ok === false ? "TODO" : "N/A";
-      const card = document.createElement("div");
-      card.className = "stack-card";
-      card.innerHTML = `<strong>${escapeHtml(check.key)}</strong><div class="stack-meta">${status}</div><p>${escapeHtml(check.detail || "")}</p>`;
+      const card = makeHostedCard({
+        title: check.key,
+        eyebrow: status,
+        body: check.detail || "No detail provided.",
+        icon: check.ok === true ? "shield" : check.ok === false ? "trigger" : "spark"
+      });
       nodes.launchpadReadiness.appendChild(card);
     });
   } catch (error) {
@@ -851,10 +1719,22 @@ function renderStackList(container, items, emptyMessage, renderItem) {
   items.forEach((item) => container.appendChild(renderItem(item)));
 }
 
-function makeHostedCard({ title, meta = "", body = "" }) {
+function makeHostedCard({ title, meta = "", body = "", eyebrow = "", icon = "spark", chips = [], className = "" }) {
   const card = document.createElement("div");
-  card.className = "stack-card";
-  card.innerHTML = `<strong>${escapeHtml(title)}</strong><div class="stack-meta">${escapeHtml(meta)}</div><p>${escapeHtml(body)}</p>`;
+  card.className = ["stack-card", className].filter(Boolean).join(" ");
+  const renderedChips = compactList(chips).map((chip) => `<span class="entity-chip">${escapeHtml(chip)}</span>`).join("");
+  card.innerHTML = `
+    <div class="entity-head">
+      <span class="entity-icon" aria-hidden="true">${iconSvg(icon)}</span>
+      <div class="entity-copy">
+        ${eyebrow ? `<div class="entity-eyebrow">${escapeHtml(eyebrow)}</div>` : ""}
+        <strong>${escapeHtml(title)}</strong>
+        ${meta ? `<div class="stack-meta">${escapeHtml(meta)}</div>` : ""}
+        ${body ? `<p>${escapeHtml(body)}</p>` : ""}
+        ${renderedChips ? `<div class="entity-chips">${renderedChips}</div>` : ""}
+      </div>
+    </div>
+  `;
   return card;
 }
 
@@ -864,9 +1744,15 @@ async function loadHostedKeys() {
     const keys = Array.isArray(out?.keys) ? out.keys : [];
     renderStackList(nodes.keysList, keys, "No keys saved for this user.", (row) => {
       const card = makeHostedCard({
-        title: `${row.service || "service"} (${row.keyMask || ""})`,
-        meta: `id: ${row.id || "-"}${row.label ? ` | ${row.label}` : ""}`,
-        body: `updated: ${row.updatedAt || "unknown"}`
+        title: row.label || row.service || "Stored key",
+        eyebrow: row.service || "secret",
+        meta: `id ${row.id || "-"}`,
+        body: `Masked value ${row.keyMask || "unavailable"}`,
+        chips: [
+          row.keyMask || "",
+          row.updatedAt ? `Updated ${formatDateTime(row.updatedAt)}` : ""
+        ],
+        icon: "key"
       });
       const actionRow = document.createElement("div");
       actionRow.className = "row";
@@ -920,11 +1806,14 @@ async function loadHostedAgents() {
     const out = await requestApi("/api/agents");
     const agents = Array.isArray(out?.agents) ? out.agents : [];
     renderStackList(nodes.agentsList, agents, "No agents available.", (row) => {
-      const tools = Array.isArray(row.tools) ? row.tools.join(", ") : "";
       const card = makeHostedCard({
-        title: `${row.slug || "-"}${row.source ? ` [${row.source}]` : ""}`,
-        meta: row.name || "",
-        body: tools || "No tools"
+        title: row.name || row.slug || "Agent",
+        eyebrow: row.source === "user" ? "Custom Agent" : "Built-in Agent",
+        meta: row.slug ? `slug ${row.slug}` : "",
+        body: row.description || "No description provided.",
+        chips: Array.isArray(row.tools) && row.tools.length ? row.tools : ["No tools"],
+        icon: inferAgentIcon(row),
+        className: "agent-card"
       });
       if (row.source === "user") {
         const actionRow = document.createElement("div");
@@ -984,8 +1873,10 @@ async function loadHostedTools() {
     const tools = Array.isArray(out?.tools) ? out.tools : [];
     renderStackList(nodes.toolsList, tools, "No tools found.", (row) => makeHostedCard({
       title: row.key || "-",
-      meta: row.service || "",
-      body: row.description || ""
+      eyebrow: row.service || "tool",
+      body: row.description || "No description provided.",
+      chips: [row.key || ""],
+      icon: inferToolIcon(row.service, row.key)
     }));
   } catch (error) {
     nodes.toolsList.textContent = `Unable to load tools: ${errorText(error)}`;
@@ -997,10 +1888,14 @@ async function loadHostedRecipes() {
     const out = await requestApi("/api/recipes");
     const recipes = Array.isArray(out?.recipes) ? out.recipes : [];
     renderStackList(nodes.recipesList, recipes, "No recipes stored.", (row) => {
+      const stepCount = Array.isArray(row.steps) ? row.steps.length : 0;
       const card = makeHostedCard({
         title: row.slug || "-",
-        meta: `${row.mode || "sequential"} | ${row.format || "json"}`,
-        body: row.description || `${Array.isArray(row.steps) ? row.steps.length : 0} step(s)`
+        eyebrow: "Recipe",
+        meta: row.description || `${row.mode || "sequential"} workflow`,
+        body: `${row.format || "json"} format${stepCount ? ` with ${stepCount} step(s)` : ""}`,
+        chips: [row.mode || "sequential", row.format || "json", stepCount ? `${stepCount} step(s)` : ""],
+        icon: "recipe"
       });
       const actionRow = document.createElement("div");
       actionRow.className = "row";
@@ -1089,8 +1984,11 @@ async function loadHostedTriggers() {
           : (row.webhook_path || "");
       const card = makeHostedCard({
         title: row.name || row.id || "-",
-        meta: `${row.type || "trigger"} -> ${row.recipe_slug || ""}`,
-        body: descriptor
+        eyebrow: `${row.type || "trigger"} trigger`,
+        meta: row.recipe_slug ? `recipe ${row.recipe_slug}` : "Recipe not linked",
+        body: descriptor || "No trigger descriptor available.",
+        chips: [row.id || "", descriptor || ""],
+        icon: "trigger"
       });
       const actionRow = document.createElement("div");
       actionRow.className = "row";
@@ -1179,8 +2077,11 @@ async function loadWebchatWidgetKeys() {
     renderStackList(nodes.webchatWidgetList, keys, "No widget keys yet.", (row) => {
       const card = makeHostedCard({
         title: row.label || row.id || "widget-key",
-        meta: `${row.keyMask || ""} | ${row.status || "active"}`,
-        body: `id: ${row.id || "-"}`
+        eyebrow: row.status || "active",
+        meta: row.id ? `id ${row.id}` : "",
+        body: row.keyMask ? `Masked key ${row.keyMask}` : "Widget key ready.",
+        chips: [row.keyMask || "", row.status || "active"],
+        icon: "webchat"
       });
       const actionRow = document.createElement("div");
       actionRow.className = "row";
@@ -1285,9 +2186,12 @@ async function loadWebchatSessions() {
     const sessions = Array.isArray(out?.sessions) ? out.sessions : [];
     renderStackList(nodes.webchatSessionsList, sessions, "No webchat sessions yet.", (row) => {
       const card = makeHostedCard({
-        title: row.id || "session",
-        meta: `${row.status || "open"} | ${row.messageCount || 0} messages`,
-        body: row.lastMessagePreview || "No messages"
+        title: row.visitorId || row.id || "session",
+        eyebrow: row.status || "open",
+        meta: row.id ? `session ${row.id}` : "webchat session",
+        body: row.lastMessagePreview || "No messages yet.",
+        chips: [`${row.messageCount || 0} message(s)`],
+        icon: "webchat"
       });
       const actionRow = document.createElement("div");
       actionRow.className = "row";
@@ -1367,8 +2271,11 @@ async function loadBaileysSessions() {
     renderStackList(nodes.baileysSessionsList, sessions, "No Baileys sessions yet.", (row) => {
       const card = makeHostedCard({
         title: row.label || row.id || "baileys-session",
-        meta: `${row.status || "idle"}${row.phone ? ` | ${row.phone}` : ""}`,
-        body: row.lastError || row.lastMessagePreview || "Ready"
+        eyebrow: row.status || "idle",
+        meta: row.id ? `session ${row.id}` : "baileys",
+        body: row.lastError || row.lastMessagePreview || "Ready for connection and messaging.",
+        chips: [row.phone || "", row.phone ? "phone linked" : "phone optional"],
+        icon: "baileys"
       });
       const actionRow = document.createElement("div");
       actionRow.className = "row";
@@ -1508,6 +2415,8 @@ async function refreshAll() {
     refreshCommandDeck().catch((error) => toast(errorText(error, "Failed to refresh command deck"), "err")),
     loadQueues().catch(() => {}),
     refreshLaunchpadReadiness().catch(() => {}),
+    loadSetupSnapshot().catch(() => {}),
+    loadAdminSurface().catch(() => {}),
     loadHostedKeys().catch(() => {}),
     loadHostedAgents().catch(() => {}),
     loadHostedTools().catch(() => {}),
@@ -1521,17 +2430,65 @@ async function refreshAll() {
 }
 
 function activateScreen(target) {
+  const safeTarget = resolveScreenTarget(target);
   nodes.screenLinks.forEach((button) => {
-    button.classList.toggle("active", button.dataset.screenTarget === target);
+    button.classList.toggle("active", button.dataset.screenTarget === safeTarget);
   });
   nodes.screens.forEach((screen) => {
-    screen.classList.toggle("active", screen.dataset.screen === target);
+    screen.classList.toggle("active", screen.dataset.screen === safeTarget);
   });
+  updateViewHeader(safeTarget);
+  const group = SCREEN_META[safeTarget]?.group;
+  if (group) openDrawer(group, { exclusive: isCompactNavigation() });
+  syncScreenHistory(safeTarget);
+  if (isCompactNavigation()) closeSidebar();
 }
 
 function bindEvents() {
   nodes.screenLinks.forEach((button) => {
     button.addEventListener("click", () => activateScreen(button.dataset.screenTarget || "command"));
+  });
+
+  nodes.navDrawers.forEach((drawer) => setDrawerState(drawer, drawer.classList.contains("is-open")));
+  nodes.navDrawerToggles.forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = String(button.dataset.drawerTarget || "").trim();
+      const drawer = nodes.navDrawers.find((item) => item.dataset.navDrawer === target);
+      if (!drawer) return;
+      const willOpen = !drawer.classList.contains("is-open");
+      if (willOpen && isCompactNavigation()) {
+        nodes.navDrawers.forEach((item) => setDrawerState(item, item === drawer));
+        return;
+      }
+      setDrawerState(drawer, willOpen);
+    });
+  });
+
+  nodes.sidebarToggle?.setAttribute("aria-expanded", "false");
+  nodes.sidebarToggle?.addEventListener("click", () => toggleSidebar());
+  nodes.sidebarScrim?.addEventListener("click", () => closeSidebar());
+
+  window.addEventListener("hashchange", () => {
+    activateScreen(resolveScreenTarget(window.location.hash));
+  });
+  window.addEventListener("popstate", () => {
+    const target = resolveScreenTarget(window.location.hash);
+    nodes.screenLinks.forEach((button) => {
+      button.classList.toggle("active", button.dataset.screenTarget === target);
+    });
+    nodes.screens.forEach((screen) => {
+      screen.classList.toggle("active", screen.dataset.screen === target);
+    });
+    updateViewHeader(target);
+    const group = SCREEN_META[target]?.group;
+    if (group) openDrawer(group, { exclusive: isCompactNavigation() });
+    if (isCompactNavigation()) closeSidebar();
+  });
+  window.addEventListener("resize", () => {
+    if (!isCompactNavigation()) closeSidebar();
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSidebar();
   });
 
   nodes.cfgSave.addEventListener("click", async () => {
@@ -1618,6 +2575,37 @@ function bindEvents() {
   nodes.applyGuard.addEventListener("click", () => applyGuardMode());
   nodes.generateHandoff.addEventListener("click", () => generateHandoffPack());
 
+  nodes.setupSave.addEventListener("click", async () => {
+    try {
+      await saveSetupConfiguration();
+    } catch (error) {
+      toast(errorText(error, "Failed to save setup"), "err");
+    }
+  });
+  nodes.setupFinish.addEventListener("click", async () => {
+    try {
+      await saveSetupConfiguration({ markComplete: true });
+    } catch (error) {
+      toast(errorText(error, "Failed to finish setup"), "err");
+    }
+  });
+  nodes.setupReload.addEventListener("click", async () => {
+    try {
+      clearSetupSensitiveInputs();
+      await loadSetupSnapshot({ forcePopulate: true, writeOutput: true });
+      toast("Saved setup reloaded.", "ok");
+    } catch (error) {
+      toast(errorText(error, "Failed to reload setup"), "err");
+    }
+  });
+  nodes.setupAgentProvider.addEventListener("change", () => syncSetupModelForProvider());
+
+  nodes.adminReload.addEventListener("click", () => loadSelfHostedAdmin());
+  nodes.adminTeamReload.addEventListener("click", () => loadAdminSurface());
+  nodes.adminInviteCreate.addEventListener("click", () => createTeamInvite());
+  nodes.adminActivityReload.addEventListener("click", () => loadTeamActivity());
+  nodes.adminActivityExport.addEventListener("click", () => exportTeamActivityJson());
+
   nodes.keySave.addEventListener("click", () => saveHostedKey());
   nodes.keyReload.addEventListener("click", () => loadHostedKeys());
 
@@ -1664,6 +2652,20 @@ function startAutoRefresh() {
 async function init() {
   pushConfigToInputs();
   bindEvents();
+  const initialTarget = resolveScreenTarget(window.location.hash);
+  const shouldReplaceHistory = window.location.hash !== `#${initialTarget}`;
+  if (shouldReplaceHistory) {
+    syncScreenHistory(initialTarget, "replace");
+  }
+  nodes.screenLinks.forEach((button) => {
+    button.classList.toggle("active", button.dataset.screenTarget === initialTarget);
+  });
+  nodes.screens.forEach((screen) => {
+    screen.classList.toggle("active", screen.dataset.screen === initialTarget);
+  });
+  updateViewHeader(initialTarget);
+  const group = SCREEN_META[initialTarget]?.group;
+  if (group) openDrawer(group, { exclusive: false });
   updateDiagnosisPreview();
   setSession("");
   await refreshAll();

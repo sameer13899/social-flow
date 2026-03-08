@@ -898,8 +898,11 @@ class AutonomousAgent {
       const highRisk = hasHighRisk(decision.actions, this.devToolByName, this.specialToolByName);
       const allLowRisk = decision.actions.every((a) => toolRisk(a.tool, this.devToolByName, this.specialToolByName) === 'low');
       const autoApproved = Boolean(this.options.yes) || Boolean(this.options.agentic);
-      const autoRun = (!highRisk && autoApproved) ||
-        (!highRisk && allLowRisk && isLikelyCliCommand(userInput));
+      const requireExplicitApproval = Boolean(this.options.requireExplicitApproval);
+      const autoRun = !requireExplicitApproval && (
+        (!highRisk && autoApproved) ||
+        (!highRisk && allLowRisk && isLikelyCliCommand(userInput))
+      );
 
       if (autoRun) {
         decision.message = `${decision.message}\n\nExecuting now.`;
@@ -932,10 +935,9 @@ class AutonomousAgent {
   llmCapability() {
     const provider = resolveChatProvider(this.config);
     const apiKey = resolveChatApiKey(provider, this.config);
-    if (provider === 'ollama') {
-      return { ok: false, provider, reason: 'disabled_provider' };
-    }
-    const ok = hasProviderCredential(provider, apiKey) && Boolean(String(apiKey || '').trim());
+    const ok = provider === 'ollama'
+      ? true
+      : (hasProviderCredential(provider, apiKey) && Boolean(String(apiKey || '').trim()));
     return { ok, provider, reason: ok ? 'ok' : 'missing_api_key' };
   }
 
@@ -945,9 +947,6 @@ class AutonomousAgent {
 
   missingApiKeyMessage(capability) {
     const provider = String(capability?.provider || 'openai');
-    if (capability?.reason === 'disabled_provider') {
-      return 'AI mode requires a cloud provider API key. Local no-key providers are disabled.';
-    }
     return `AI mode requires a valid API key for provider "${provider}".`;
   }
 

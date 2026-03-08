@@ -41,7 +41,7 @@ export const sessionActionTests: TuiTestCase[] = [
           turns: [{ id: "t1", at: "2026-03-01T00:00:00.000Z", role: "user", text: "hello" }]
         }, { profileId: "default" });
 
-        const hatchRoot = path.join(root, ".social-cli", "hatch");
+        const hatchRoot = path.join(root, ".social-flow", "hatch");
         assert.equal(await exists(path.join(hatchRoot, "sessions", "hatch_session_one.json")), true);
         assert.equal(await exists(path.join(hatchRoot, "profiles", "default.json")), true);
         assert.equal(await exists(path.join(hatchRoot, "index.json")), true);
@@ -87,9 +87,10 @@ export const sessionActionTests: TuiTestCase[] = [
     name: "legacy hatch memory file is migrated to scoped storage",
     fn: async () => {
       await withIsolatedCliHome(async (root) => {
-        const hatchRoot = path.join(root, ".social-cli", "hatch");
-        await mkdir(hatchRoot, { recursive: true });
-        await writeFile(path.join(hatchRoot, "memory.json"), JSON.stringify({
+        const legacyHatchRoot = path.join(root, ".social-cli", "hatch");
+        const hatchRoot = path.join(root, ".social-flow", "hatch");
+        await mkdir(legacyHatchRoot, { recursive: true });
+        await writeFile(path.join(legacyHatchRoot, "memory.json"), JSON.stringify({
           sessionId: "legacy_session",
           updatedAt: "2026-03-01T00:00:00.000Z",
           profileName: "Legacy User",
@@ -112,4 +113,3 @@ export const sessionActionTests: TuiTestCase[] = [
     }
   }
 ];
-

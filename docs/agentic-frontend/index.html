@@ -3,38 +3,188 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Social Flow Agentic Frontend Screens</title>
+  <title>Social Flow Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+  <div class="bg-grid" aria-hidden="true"></div>
   <div class="bg-bloom bloom-a" aria-hidden="true"></div>
   <div class="bg-bloom bloom-b" aria-hidden="true"></div>
+  <div class="bg-bloom bloom-c" aria-hidden="true"></div>
+  <button id="sidebar-scrim" class="sidebar-scrim" type="button" aria-label="Close navigation"></button>
 
   <div class="app-shell">
     <aside class="side-rail">
       <div class="brand-block">
-        <p class="eyebrow">Social Flow</p>
-        <h1>Agentic Frontend</h1>
-        <p class="brand-copy">Conversation-first screens for ops, approvals, diagnostics, and safe execution.</p>
+        <div class="brand-mark">
+          <span class="brand-badge">SF</span>
+          <div>
+            <p class="eyebrow">Social Flow Studio</p>
+            <h1>AI operator workspace</h1>
+          </div>
+        </div>
+        <p class="brand-copy">A live control surface for approvals, diagnostics, channels, recipes, and safe execution.</p>
+        <div class="brand-flags">
+          <span class="brand-flag">Live gateway</span>
+          <span class="brand-flag soft">Multi-tool ops</span>
+        </div>
+        <div class="brand-grid">
+          <div class="brand-metric">
+            <strong>15</strong>
+            <span>Surfaces</span>
+          </div>
+          <div class="brand-metric">
+            <strong>4</strong>
+            <span>Drawers</span>
+          </div>
+          <div class="brand-metric">
+            <strong>1</strong>
+            <span>Workspace</span>
+          </div>
+        </div>
       </div>
 
       <nav class="screen-nav" aria-label="Screen Navigation">
-        <button type="button" class="screen-link active" data-screen-target="command">Command Deck</button>
-        <button type="button" class="screen-link" data-screen-target="copilot">Agent Copilot</button>
-        <button type="button" class="screen-link" data-screen-target="approvals">Approvals Center</button>
-        <button type="button" class="screen-link" data-screen-target="diagnose">Ads Diagnosis</button>
-        <button type="button" class="screen-link" data-screen-target="launchpad">Ops Launchpad</button>
-        <button type="button" class="screen-link" data-screen-target="keys">Keys</button>
-        <button type="button" class="screen-link" data-screen-target="agents">Agents</button>
-        <button type="button" class="screen-link" data-screen-target="tools">Tools</button>
-        <button type="button" class="screen-link" data-screen-target="recipes">Recipes</button>
-        <button type="button" class="screen-link" data-screen-target="triggers">Triggers</button>
-        <button type="button" class="screen-link" data-screen-target="webchat">Webchat</button>
-        <button type="button" class="screen-link" data-screen-target="baileys">Baileys</button>
-        <button type="button" class="screen-link" data-screen-target="logs">Logs</button>
+        <section class="nav-drawer is-open" data-nav-drawer="mission">
+          <button type="button" class="nav-drawer-toggle" data-drawer-target="mission">
+            <span class="nav-drawer-copy">
+              <strong>Mission Control</strong>
+              <small>overview, copilot, approvals</small>
+            </span>
+            <span class="nav-drawer-meta">4</span>
+          </button>
+          <div class="nav-drawer-body">
+            <button type="button" class="screen-link active" data-screen-target="command" data-nav-group="mission">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h10"/><path d="M17 15l3 3-3 3"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Command Deck</strong><small>readiness, risk, sources</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="copilot" data-nav-group="mission">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 3v4"/><path d="M7 8.5A4.5 4.5 0 0 1 11.5 4h1A4.5 4.5 0 0 1 17 8.5V11a4 4 0 0 0 1.2 2.8L20 15.5V18H4v-2.5l1.8-1.7A4 4 0 0 0 7 11Z"/><path d="M9 21h6"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Agent Copilot</strong><small>chat, plans, execution</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="approvals" data-nav-group="mission">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M8 12.5l2.5 2.5L16 9.5"/><path d="M12 3l7 4v5c0 4.2-2.4 7.2-7 9-4.6-1.8-7-4.8-7-9V7l7-4Z"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Approvals Center</strong><small>decisions and alerts</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="diagnose" data-nav-group="mission">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 16V9"/><path d="M12 16V5"/><path d="M17 16v-4"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Ads Diagnosis</strong><small>operator diagnosis form</small></span>
+            </button>
+          </div>
+        </section>
+
+        <section class="nav-drawer is-open" data-nav-drawer="ops">
+          <button type="button" class="nav-drawer-toggle" data-drawer-target="ops">
+            <span class="nav-drawer-copy">
+              <strong>Operations</strong>
+              <small>launch flows and setup state</small>
+            </span>
+            <span class="nav-drawer-meta">4</span>
+          </button>
+          <div class="nav-drawer-body">
+            <button type="button" class="screen-link" data-screen-target="launchpad" data-nav-group="ops">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M5 19h14"/><path d="M8 16l4-11 4 11"/><path d="M9.5 12h5"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Ops Launchpad</strong><small>guardrails and runbooks</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="setup" data-nav-group="ops">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="M6.5 6.5l2.8 2.8"/><path d="M14.7 14.7l2.8 2.8"/><path d="M17.5 6.5l-2.8 2.8"/><path d="M9.3 14.7l-2.8 2.8"/><circle cx="12" cy="12" r="3.5"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Setup Concierge</strong><small>save credentials and finish</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="admin" data-nav-group="ops">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 3l7 4v5c0 4.2-2.4 7.2-7 9-4.6-1.8-7-4.8-7-9V7l7-4Z"/><path d="M8.5 12.5l2.2 2.2 4.8-5"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Workspace Admin</strong><small>deploy, team access, hardening</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="logs" data-nav-group="ops">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M6 5.5h12"/><path d="M6 12h12"/><path d="M6 18.5h8"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Logs</strong><small>traces and execution history</small></span>
+            </button>
+          </div>
+        </section>
+
+        <section class="nav-drawer is-open" data-nav-drawer="builder">
+          <button type="button" class="nav-drawer-toggle" data-drawer-target="builder">
+            <span class="nav-drawer-copy">
+              <strong>Builder</strong>
+              <small>credentials, agents, tools, automations</small>
+            </span>
+            <span class="nav-drawer-meta">5</span>
+          </button>
+          <div class="nav-drawer-body">
+            <button type="button" class="screen-link" data-screen-target="keys" data-nav-group="builder">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="8.5" cy="12" r="3.5"/><path d="M12 12h8"/><path d="M17 12v3"/><path d="M20 12v2"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Keys</strong><small>BYOK vault and secrets</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="agents" data-nav-group="builder">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 19c1.5-3 4-4.5 7-4.5S17.5 16 19 19"/><path d="M4 7h2"/><path d="M18 7h2"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Agents</strong><small>built-ins and custom crews</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="tools" data-nav-group="builder">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M14 5l5 5"/><path d="M10 19l-5-5"/><path d="M13 6l-7 7"/><path d="M18 11l-7 7"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Tools</strong><small>service capabilities</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="recipes" data-nav-group="builder">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M7 4.5h10"/><path d="M7 9.5h10"/><path d="M7 14.5h6"/><path d="M17 17.5l2 2 3-4"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Recipes</strong><small>saved workflow stacks</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="triggers" data-nav-group="builder">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 3v5"/><path d="M12 16v5"/><path d="M5 12h5"/><path d="M14 12h5"/><circle cx="12" cy="12" r="4"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Triggers</strong><small>cron, webhook, event</small></span>
+            </button>
+          </div>
+        </section>
+
+        <section class="nav-drawer is-open" data-nav-drawer="channels">
+          <button type="button" class="nav-drawer-toggle" data-drawer-target="channels">
+            <span class="nav-drawer-copy">
+              <strong>Channels</strong>
+              <small>session operations and messaging</small>
+            </span>
+            <span class="nav-drawer-meta">2</span>
+          </button>
+          <div class="nav-drawer-body">
+            <button type="button" class="screen-link" data-screen-target="webchat" data-nav-group="channels">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M5 6h14v9H9l-4 4Z"/><path d="M9 10h6"/><path d="M9 13h4"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Webchat</strong><small>widget keys and sessions</small></span>
+            </button>
+            <button type="button" class="screen-link" data-screen-target="baileys" data-nav-group="channels">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M7 5.5h10A3.5 3.5 0 0 1 20.5 9v5A3.5 3.5 0 0 1 17 17.5H9l-4 3v-4A3.5 3.5 0 0 1 3.5 14V9A3.5 3.5 0 0 1 7 5.5Z"/><path d="M9 10h6"/><path d="M9 13h5"/></svg>
+              </span>
+              <span class="nav-copy"><strong>Baileys</strong><small>WhatsApp Web sessions</small></span>
+            </button>
+          </div>
+        </section>
       </nav>
 
       <section class="card gateway-config">
@@ -67,17 +217,77 @@
 
     <main class="main-panel">
       <header class="topbar">
-        <div class="status-cluster">
-          <span id="status-pill" class="pill warn">Gateway: checking</span>
-          <span id="workspace-pill" class="pill soft">Workspace: --</span>
-          <span id="session-pill" class="pill soft">Session: --</span>
+        <div class="topbar-main">
+          <button id="sidebar-toggle" type="button" class="secondary sidebar-toggle" aria-label="Open navigation">
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+          <div class="view-copy">
+            <p id="view-kicker" class="eyebrow topbar-kicker">Mission Control</p>
+            <h2 id="view-title">Command Deck</h2>
+            <p id="view-summary" class="muted">A single at-a-glance surface for readiness, risk, and workload pressure.</p>
+          </div>
         </div>
-        <div class="row">
+        <div class="topbar-actions">
+          <div class="status-cluster">
+            <span id="status-pill" class="pill warn">Gateway: checking</span>
+            <span id="workspace-pill" class="pill soft">Workspace: --</span>
+            <span id="session-pill" class="pill soft">Session: --</span>
+          </div>
           <button id="refresh-all" type="button" class="secondary">Refresh Data</button>
         </div>
       </header>
 
       <section id="screen-command" class="screen active" data-screen="command">
+        <article class="hero-stage">
+          <div class="hero-copy">
+            <p class="eyebrow">Your operator team is online</p>
+            <h2>Your <span>social ops workforce</span> is ready to work.</h2>
+            <p class="muted hero-muted">Run lead capture, approvals, diagnostics, channels, and automations from one calm workspace modeled for always-on execution.</p>
+            <div class="hero-badges" aria-label="Studio capabilities">
+              <span class="hero-badge">Browser</span>
+              <span class="hero-badge">Channels</span>
+              <span class="hero-badge">Recipes</span>
+              <span class="hero-badge">Approvals</span>
+            </div>
+          </div>
+          <div class="hero-console" aria-hidden="true">
+            <div class="hero-console-head">
+              <span class="console-dot"></span>
+              <span class="console-dot"></span>
+              <span class="console-dot"></span>
+              <span class="hero-console-title">studio.live</span>
+            </div>
+            <div class="hero-console-body">
+              <div class="hero-task">
+                <p class="hero-task-label">Approval queue</p>
+                <strong>4 decisions waiting</strong>
+                <span>Open alerts triaged, notes attached, audit trail preserved.</span>
+              </div>
+              <div class="hero-kpi-strip">
+                <div class="hero-kpi">
+                  <span>Workflow runs</span>
+                  <strong>28</strong>
+                </div>
+                <div class="hero-kpi">
+                  <span>Sources ready</span>
+                  <strong>11/13</strong>
+                </div>
+                <div class="hero-kpi">
+                  <span>Channels</span>
+                  <strong>6 live</strong>
+                </div>
+              </div>
+              <div class="hero-task alt">
+                <p class="hero-task-label">Copilot pulse</p>
+                <strong>Morning run prepared</strong>
+                <span>Budget checks, inbox triage, trigger health, and channel replies ready for review.</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
         <div class="screen-head">
           <h2>Command Deck</h2>
           <p class="muted">A single at-a-glance surface for readiness, risk, and workload pressure.</p>
@@ -332,29 +542,213 @@
         </article>
       </section>
 
+      <section id="screen-setup" class="screen" data-screen="setup">
+        <div class="screen-head">
+          <h2>Setup Concierge</h2>
+          <p class="muted">Connect tokens, Meta app credentials, and AI provider keys without editing <code>.env</code>. Leave secret fields blank to keep the saved value.</p>
+        </div>
+
+        <div id="setup-metrics" class="metric-grid">
+          <article class="metric-card">
+            <p class="metric-label">Loading</p>
+            <p class="metric-value">--</p>
+          </article>
+        </div>
+
+        <div class="dual-grid">
+          <article class="card">
+            <h3>Setup Checklist</h3>
+            <div id="setup-checklist" class="stack-list">Loading saved setup...</div>
+          </article>
+
+          <article class="card">
+            <h3>Save Credentials</h3>
+
+            <label for="setup-default-api">Default API</label>
+            <select id="setup-default-api">
+              <option value="facebook">facebook</option>
+              <option value="instagram">instagram</option>
+              <option value="whatsapp">whatsapp</option>
+            </select>
+
+            <div class="dual-grid">
+              <div>
+                <label for="setup-facebook-token">Facebook Token</label>
+                <input id="setup-facebook-token" type="password" placeholder="Paste Facebook token" />
+              </div>
+              <div>
+                <label for="setup-instagram-token">Instagram Token</label>
+                <input id="setup-instagram-token" type="password" placeholder="Paste Instagram token" />
+              </div>
+            </div>
+
+            <label for="setup-whatsapp-token">WhatsApp Token</label>
+            <input id="setup-whatsapp-token" type="password" placeholder="Paste WhatsApp token" />
+
+            <div class="dual-grid">
+              <div>
+                <label for="setup-app-id">Meta App ID</label>
+                <input id="setup-app-id" type="text" placeholder="Paste App ID" />
+              </div>
+              <div>
+                <label for="setup-app-secret">Meta App Secret</label>
+                <input id="setup-app-secret" type="password" placeholder="Paste App Secret" />
+              </div>
+            </div>
+
+            <div class="dual-grid">
+              <div>
+                <label for="setup-agent-provider">Agent AI Provider</label>
+                <select id="setup-agent-provider">
+                  <option value="ollama">ollama</option>
+                  <option value="openai">openai</option>
+                  <option value="anthropic">anthropic</option>
+                  <option value="openrouter">openrouter</option>
+                  <option value="xai">xai</option>
+                  <option value="gemini">gemini</option>
+                </select>
+              </div>
+              <div>
+                <label for="setup-agent-model">Agent Model</label>
+                <input id="setup-agent-model" type="text" placeholder="Model name" />
+              </div>
+            </div>
+
+            <label for="setup-agent-api-key">Agent API Key</label>
+            <input id="setup-agent-api-key" type="password" placeholder="Paste provider API key" />
+
+            <div class="row">
+              <button id="setup-save" type="button">Save Setup</button>
+              <button id="setup-finish" type="button" class="secondary">Save + Finish Setup</button>
+              <button id="setup-reload" type="button" class="secondary">Reload Saved</button>
+            </div>
+            <p class="micro-copy">This writes into Social Flow config, not process env vars. Sensitive fields are cleared after save.</p>
+          </article>
+        </div>
+
+        <article class="card">
+          <h3>Last Setup Response</h3>
+          <pre id="setup-output" class="mono-block">Setup status will appear here.</pre>
+        </article>
+      </section>
+
+      <section id="screen-admin" class="screen" data-screen="admin">
+        <div class="screen-head">
+          <h2>Workspace Admin</h2>
+          <p class="muted">Self-hosted deployment confidence for versioning, storage, hardening, team access, and operational history.</p>
+        </div>
+
+        <div id="admin-metrics" class="metric-grid">
+          <article class="metric-card">
+            <p class="metric-label">Loading</p>
+            <p class="metric-value">--</p>
+          </article>
+        </div>
+
+        <div class="dual-grid">
+          <article class="card">
+            <div class="row spread">
+              <h3>System Confidence</h3>
+              <button id="admin-reload" type="button" class="secondary">Reload Admin</button>
+            </div>
+            <div id="admin-checks" class="stack-list">Loading self-hosted checks...</div>
+          </article>
+
+          <article class="card">
+            <h3>Storage + Paths</h3>
+            <div id="admin-paths" class="stack-list">Loading storage paths...</div>
+          </article>
+        </div>
+
+        <article class="card">
+          <h3>Upgrade + Backup Playbook</h3>
+          <pre id="admin-playbook" class="mono-block">Loading upgrade and backup guidance...</pre>
+        </article>
+
+        <div class="dual-grid">
+          <article class="card">
+            <h3>Create Team Invite</h3>
+            <label for="admin-invite-role">Role</label>
+            <select id="admin-invite-role">
+              <option value="operator" selected>operator</option>
+              <option value="admin">admin</option>
+              <option value="viewer">viewer</option>
+            </select>
+
+            <label for="admin-invite-hours">Expires In (hours)</label>
+            <input id="admin-invite-hours" type="number" min="1" max="720" value="72" />
+
+            <label for="admin-invite-base-url">Accept Link Base URL</label>
+            <input id="admin-invite-base-url" type="text" placeholder="http://127.0.0.1:1310" />
+
+            <div class="row">
+              <button id="admin-invite-create" type="button">Create Invite</button>
+              <button id="admin-team-reload" type="button" class="secondary">Reload Team</button>
+            </div>
+
+            <div id="admin-invite-stats" class="metric-grid">
+              <article class="metric-card">
+                <p class="metric-label">Loading</p>
+                <p class="metric-value">--</p>
+              </article>
+            </div>
+          </article>
+
+          <article class="card">
+            <h3>Team Roles</h3>
+            <div id="admin-roles-list" class="stack-list">Loading roles...</div>
+          </article>
+        </div>
+
+        <article class="card">
+          <h3>Invites</h3>
+          <div id="admin-invites-list" class="stack-list">Loading invites...</div>
+        </article>
+
+        <article class="card">
+          <div class="row spread">
+            <h3>Recent Team Activity</h3>
+            <div class="row">
+              <input id="admin-activity-limit" type="number" min="5" max="200" value="25" />
+              <button id="admin-activity-reload" type="button" class="secondary">Reload Activity</button>
+              <button id="admin-activity-export" type="button" class="secondary">Export JSON</button>
+            </div>
+          </div>
+          <div id="admin-activity-list" class="stack-list">Loading activity...</div>
+        </article>
+
+        <article class="card">
+          <h3>Admin Output</h3>
+          <pre id="admin-output" class="mono-block">Invite links and export payloads will appear here.</pre>
+        </article>
+      </section>
+
       <section id="screen-keys" class="screen" data-screen="keys">
         <div class="screen-head">
           <h2>BYOK Keys</h2>
           <p class="muted">Store per-user encrypted provider keys. Values are masked on read.</p>
         </div>
 
-        <article class="card">
-          <label for="key-service">Service</label>
-          <input id="key-service" type="text" placeholder="openai / openrouter / xai / meta_whatsapp" />
-          <label for="key-label">Label</label>
-          <input id="key-label" type="text" placeholder="primary-llm" />
-          <label for="key-secret">API Key / Token</label>
-          <input id="key-secret" type="password" placeholder="Paste key here" />
-          <div class="row">
-            <button id="key-save" type="button">Save Key</button>
-            <button id="key-reload" type="button" class="secondary">Reload</button>
-          </div>
-        </article>
+        <div class="dual-grid">
+          <article class="card">
+            <h3>Save Key</h3>
+            <label for="key-service">Service</label>
+            <input id="key-service" type="text" placeholder="openai / openrouter / xai / meta_whatsapp" />
+            <label for="key-label">Label</label>
+            <input id="key-label" type="text" placeholder="primary-llm" />
+            <label for="key-secret">API Key / Token</label>
+            <input id="key-secret" type="password" placeholder="Paste key here" />
+            <div class="row">
+              <button id="key-save" type="button">Save Key</button>
+              <button id="key-reload" type="button" class="secondary">Reload</button>
+            </div>
+          </article>
 
-        <article class="card">
-          <h3>Stored Keys</h3>
-          <div id="keys-list" class="stack-list">No keys loaded.</div>
-        </article>
+          <article class="card">
+            <h3>Stored Keys</h3>
+            <div id="keys-list" class="stack-list">No keys loaded.</div>
+          </article>
+        </div>
       </section>
 
       <section id="screen-agents" class="screen" data-screen="agents">
@@ -363,25 +757,28 @@
           <p class="muted">Built-in agents plus user-defined agents loaded from configuration.</p>
         </div>
 
-        <article class="card">
-          <label for="agent-slug">Agent Slug</label>
-          <input id="agent-slug" type="text" placeholder="custom-ops" />
-          <label for="agent-name">Agent Name</label>
-          <input id="agent-name" type="text" placeholder="Custom Ops" />
-          <label for="agent-desc">Description</label>
-          <input id="agent-desc" type="text" placeholder="Runs status and log checks" />
-          <label for="agent-tools-input">Tool Keys (comma separated)</label>
-          <input id="agent-tools-input" type="text" placeholder="meta.status,gateway.logs" />
-          <div class="row">
-            <button id="agent-save" type="button">Save Agent</button>
-            <button id="agent-reload" type="button" class="secondary">Reload</button>
-          </div>
-        </article>
+        <div class="dual-grid">
+          <article class="card">
+            <h3>Create Custom Agent</h3>
+            <label for="agent-slug">Agent Slug</label>
+            <input id="agent-slug" type="text" placeholder="custom-ops" />
+            <label for="agent-name">Agent Name</label>
+            <input id="agent-name" type="text" placeholder="Custom Ops" />
+            <label for="agent-desc">Description</label>
+            <input id="agent-desc" type="text" placeholder="Runs status and log checks" />
+            <label for="agent-tools-input">Tool Keys (comma separated)</label>
+            <input id="agent-tools-input" type="text" placeholder="meta.status,gateway.logs" />
+            <div class="row">
+              <button id="agent-save" type="button">Save Agent</button>
+              <button id="agent-reload" type="button" class="secondary">Reload</button>
+            </div>
+          </article>
 
-        <article class="card">
-          <h3>Agent Registry</h3>
-          <div id="agents-list" class="stack-list">No agents loaded.</div>
-        </article>
+          <article class="card">
+            <h3>Agent Registry</h3>
+            <div id="agents-list" class="stack-list">No agents loaded.</div>
+          </article>
+        </div>
       </section>
 
       <section id="screen-tools" class="screen" data-screen="tools">
@@ -404,31 +801,34 @@
           <p class="muted">JSON/YAML workflow files with step chaining via <code>$prev</code>.</p>
         </div>
 
-        <article class="card">
-          <label for="recipe-slug">Recipe Slug</label>
-          <input id="recipe-slug" type="text" placeholder="daily-status" />
-          <label for="recipe-format">Format</label>
-          <select id="recipe-format">
-            <option value="json" selected>json</option>
-            <option value="yaml">yaml</option>
-          </select>
-          <label for="recipe-content">Recipe Content</label>
-          <textarea id="recipe-content" placeholder='{"slug":"daily-status","steps":[{"agent_slug":"ops-agent","action_key":"status","action_props":{}}]}'></textarea>
-          <div class="row">
-            <button id="recipe-save" type="button">Save Recipe</button>
-            <button id="recipe-reload" type="button" class="secondary">Reload</button>
-          </div>
-          <label for="recipe-run-slug">Run Recipe Slug</label>
-          <input id="recipe-run-slug" type="text" placeholder="daily-status" />
-          <div class="row">
-            <button id="recipe-run" type="button">Run Recipe</button>
-          </div>
-        </article>
+        <div class="dual-grid">
+          <article class="card">
+            <h3>Compose Recipe</h3>
+            <label for="recipe-slug">Recipe Slug</label>
+            <input id="recipe-slug" type="text" placeholder="daily-status" />
+            <label for="recipe-format">Format</label>
+            <select id="recipe-format">
+              <option value="json" selected>json</option>
+              <option value="yaml">yaml</option>
+            </select>
+            <label for="recipe-content">Recipe Content</label>
+            <textarea id="recipe-content" placeholder='{"slug":"daily-status","steps":[{"agent_slug":"ops-agent","action_key":"status","action_props":{}}]}'></textarea>
+            <div class="row">
+              <button id="recipe-save" type="button">Save Recipe</button>
+              <button id="recipe-reload" type="button" class="secondary">Reload</button>
+            </div>
+            <label for="recipe-run-slug">Run Recipe Slug</label>
+            <input id="recipe-run-slug" type="text" placeholder="daily-status" />
+            <div class="row">
+              <button id="recipe-run" type="button">Run Recipe</button>
+            </div>
+          </article>
 
-        <article class="card">
-          <h3>Recipes</h3>
-          <div id="recipes-list" class="stack-list">No recipes loaded.</div>
-        </article>
+          <article class="card">
+            <h3>Recipe Library</h3>
+            <div id="recipes-list" class="stack-list">No recipes loaded.</div>
+          </article>
+        </div>
 
         <article class="card">
           <h3>Recipe Output</h3>
@@ -442,31 +842,34 @@
           <p class="muted">Cron, webhook, and event triggers mapped to saved recipes.</p>
         </div>
 
-        <article class="card">
-          <label for="trigger-name">Trigger Name</label>
-          <input id="trigger-name" type="text" placeholder="daily-status-hook" />
-          <label for="trigger-type">Trigger Type</label>
-          <select id="trigger-type">
-            <option value="cron">cron</option>
-            <option value="webhook">webhook</option>
-            <option value="event">event</option>
-          </select>
-          <label for="trigger-recipe">Recipe Slug</label>
-          <input id="trigger-recipe" type="text" placeholder="daily-status" />
-          <label for="trigger-schedule">Cron Schedule (for cron)</label>
-          <input id="trigger-schedule" type="text" placeholder="*/15 * * * *" />
-          <label for="trigger-event">Event Name (for event)</label>
-          <input id="trigger-event" type="text" placeholder="orchestrate.completed" />
-          <div class="row">
-            <button id="trigger-save" type="button">Create Trigger</button>
-            <button id="trigger-reload" type="button" class="secondary">Reload</button>
-          </div>
-        </article>
+        <div class="dual-grid">
+          <article class="card">
+            <h3>Create Trigger</h3>
+            <label for="trigger-name">Trigger Name</label>
+            <input id="trigger-name" type="text" placeholder="daily-status-hook" />
+            <label for="trigger-type">Trigger Type</label>
+            <select id="trigger-type">
+              <option value="cron">cron</option>
+              <option value="webhook">webhook</option>
+              <option value="event">event</option>
+            </select>
+            <label for="trigger-recipe">Recipe Slug</label>
+            <input id="trigger-recipe" type="text" placeholder="daily-status" />
+            <label for="trigger-schedule">Cron Schedule (for cron)</label>
+            <input id="trigger-schedule" type="text" placeholder="*/15 * * * *" />
+            <label for="trigger-event">Event Name (for event)</label>
+            <input id="trigger-event" type="text" placeholder="orchestrate.completed" />
+            <div class="row">
+              <button id="trigger-save" type="button">Create Trigger</button>
+              <button id="trigger-reload" type="button" class="secondary">Reload</button>
+            </div>
+          </article>
 
-        <article class="card">
-          <h3>Triggers</h3>
-          <div id="triggers-list" class="stack-list">No triggers loaded.</div>
-        </article>
+          <article class="card">
+            <h3>Trigger Registry</h3>
+            <div id="triggers-list" class="stack-list">No triggers loaded.</div>
+          </article>
+        </div>
       </section>
 
       <section id="screen-webchat" class="screen" data-screen="webchat">

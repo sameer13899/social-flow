@@ -1,8 +1,6 @@
-# Agentic Frontend Screens
+# Social Flow Studio
 
-This folder contains an external, static frontend prototype for Social Flow.
-
-It is intentionally not bundled into gateway root (`/`).
+This folder contains the Studio frontend served by the gateway at `/studio/app/`.
 
 ## Included Screens
 

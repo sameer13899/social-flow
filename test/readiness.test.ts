@@ -10,7 +10,12 @@ function mockConfig(input = {}) {
     getDefaultApi: () => input.defaultApi || 'facebook',
     hasToken: (api) => Boolean(tokens[api]),
     hasCompletedOnboarding: () => Boolean(input.onboardingCompleted),
-    hasAppCredentials: () => Boolean(input.appCredentialsConfigured)
+    hasAppCredentials: () => Boolean(input.appCredentialsConfigured),
+    getAgentConfig: () => ({
+      provider: input.agentProvider || 'openai',
+      model: input.agentModel || '',
+      apiKey: input.agentApiKey || ''
+    })
   };
 }
 
@@ -45,6 +50,46 @@ module.exports = [
       assert.equal(report.ok, true);
       assert.equal(report.blockers.length, 0);
       assert.equal(report.anyTokenConfigured, true);
+    }
+  },
+  {
+    name: 'readiness report warns when agent api key is missing',
+    fn: () => {
+      const report = buildReadinessReport({
+        config: mockConfig({
+          defaultApi: 'facebook',
+          tokens: { facebook: true },
+          onboardingCompleted: true,
+          appCredentialsConfigured: true,
+          agentProvider: 'openrouter',
+          agentApiKey: ''
+        })
+      });
+      assert.equal(report.ok, true);
+      assert.equal(report.agent.provider, 'openrouter');
+      assert.equal(report.agent.apiKeyConfigured, false);
+      assert.equal(report.warnings.some((item) => item.code === 'agent_api_key_missing'), true);
+    }
+  },
+  {
+    name: 'readiness report treats local ollama provider as ready without api key',
+    fn: () => {
+      const report = buildReadinessReport({
+        config: mockConfig({
+          defaultApi: 'facebook',
+          tokens: { facebook: true },
+          onboardingCompleted: true,
+          appCredentialsConfigured: true,
+          agentProvider: 'ollama',
+          agentModel: 'qwen2.5:7b',
+          agentApiKey: ''
+        })
+      });
+      assert.equal(report.ok, true);
+      assert.equal(report.agent.provider, 'ollama');
+      assert.equal(report.agent.apiKeyConfigured, true);
+      assert.equal(report.warnings.some((item) => item.code === 'agent_api_key_missing'), false);
+      assert.equal(report.nextActions.some((item) => item.includes('--provider ollama --api-key')), false);
     }
   },
   {
@@ -106,6 +151,29 @@ module.exports = [
       );
       assert.equal(decision.replace, true);
       assert.equal(decision.reason, 'studio_route_unavailable');
+    }
+  },
+  {
+    name: 'gateway manager treats legacy studio 404 payload as unavailable',
+    fn: () => {
+      const unavailable = gatewayManager._private.isStudioRouteUnavailable({
+        status: 404,
+        body: JSON.stringify({
+          ok: false,
+          error: 'Bundled Studio frontend is not installed. Add a build to assets/studio or set SOCIAL_STUDIO_ASSET_DIR(S), then open /studio/app.'
+        })
+      });
+      assert.equal(unavailable, true);
+    }
+  },
+  {
+    name: 'gateway manager accepts healthy studio app route probe',
+    fn: () => {
+      const unavailable = gatewayManager._private.isStudioRouteUnavailable({
+        status: 200,
+        body: '<!doctype html><html><body>Social Flow Studio</body></html>'
+      });
+      assert.equal(unavailable, false);
     }
   },
   {

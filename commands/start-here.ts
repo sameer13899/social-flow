@@ -8,12 +8,17 @@ const { renderPanel, kv, formatBadge, mint } = require('../lib/ui/chrome');
 const { normalizeProvider, defaultModelForProvider, resolveApiKeyForProvider } = require('../lib/llm-providers');
 
 const PROVIDER_CHOICES = [
+  { name: 'Ollama (Local)', value: 'ollama', env: 'SOCIAL_OLLAMA_BASE_URL' },
   { name: 'OpenAI', value: 'openai', env: 'OPENAI_API_KEY' },
   { name: 'OpenRouter', value: 'openrouter', env: 'OPENROUTER_API_KEY' },
   { name: 'xAI (Grok)', value: 'xai', env: 'XAI_API_KEY' },
   { name: 'Anthropic (Claude)', value: 'anthropic', env: 'ANTHROPIC_API_KEY' },
   { name: 'Google Gemini', value: 'gemini', env: 'GEMINI_API_KEY' }
 ];
+
+function providerNeedsApiKey(provider) {
+  return normalizeProvider(provider) !== 'ollama';
+}
 
 function providerMeta(provider) {
   const normalized = normalizeProvider(provider);
@@ -99,7 +104,8 @@ async function chooseProvider(defaultProvider, quick) {
 async function promptAiConfig({ provider, key, model, quick }) {
   const meta = providerMeta(provider);
   const defaultModel = String(model || defaultModelForProvider(provider)).trim();
-  const hasKey = Boolean(String(key || '').trim());
+  const requiresApiKey = providerNeedsApiKey(provider);
+  const hasKey = requiresApiKey ? Boolean(String(key || '').trim()) : true;
 
   if (!process.stdout.isTTY || !process.stdin.isTTY) {
     return {
@@ -111,11 +117,15 @@ async function promptAiConfig({ provider, key, model, quick }) {
 
   if (!quick) {
     console.log(chalk.cyan(`\n[AI] ${meta.name}`));
-    console.log(chalk.gray(`If you don't have a key in profile/env, set ${meta.env} or enter it below.`));
+    if (requiresApiKey) {
+      console.log(chalk.gray(`If you don't have a key in profile/env, set ${meta.env} or enter it below.`));
+    } else {
+      console.log(chalk.gray(`No API key is required for local Ollama. Default base URL: ${process.env.SOCIAL_OLLAMA_BASE_URL || process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434'}`));
+    }
   }
 
   const questions = [];
-  if (!hasKey) {
+  if (!hasKey && requiresApiKey) {
     questions.push({
       type: 'password',
       name: 'apiKey',
@@ -143,8 +153,8 @@ async function promptAiConfig({ provider, key, model, quick }) {
     key: String(answers.apiKey || key || '').trim(),
     model: String(answers.model || defaultModel).trim() || defaultModel,
     save: Boolean(answers.save)
-  };
-}
+    };
+  }
 
 function registerStartHereCommand(program) {
   const defaultHost = process.env.PORT ? '0.0.0.0' : '127.0.0.1';
@@ -153,7 +163,7 @@ function registerStartHereCommand(program) {
   program
     .command('start-here')
     .description('Unified first-run flow: AI config + setup + health verification')
-    .option('--provider <provider>', 'AI provider: openai|openrouter|xai|anthropic|gemini')
+    .option('--provider <provider>', 'AI provider: ollama|openai|openrouter|xai|anthropic|gemini')
     .option('--model <model>', 'AI model override')
     .option('--api-key <key>', 'AI API key override')
     .option('--skip-ai', 'Skip AI provider/key/model setup', false)
@@ -167,7 +177,10 @@ function registerStartHereCommand(program) {
       const defaultApi = config.getDefaultApi();
       const agentCfg = typeof config.getAgentConfig === 'function' ? config.getAgentConfig() : {};
       const anyToken = Boolean(config.hasToken('facebook') || config.hasToken('instagram') || config.hasToken('whatsapp'));
-      const hasAgentReady = Boolean(String(agentCfg.apiKey || '').trim() && String(agentCfg.model || '').trim());
+      const hasAgentReady = Boolean(
+        String(agentCfg.model || '').trim()
+        && (normalizeProvider(agentCfg.provider || 'openai') === 'ollama' || String(agentCfg.apiKey || '').trim())
+      );
 
       printStartHereHeader(activeProfile, defaultApi, anyToken, hasAgentReady);
 
@@ -187,7 +200,7 @@ function registerStartHereCommand(program) {
           quick: Boolean(opts.quick)
         });
 
-        if (!ai.key) {
+        if (!ai.key && providerNeedsApiKey(provider)) {
           const hint = providerMeta(provider);
           console.error(chalk.red('\nMissing AI API key.'));
           console.error(chalk.gray(`Provide --api-key, set ${hint.env}, or rerun in an interactive terminal.\n`));
@@ -246,5 +259,11 @@ function registerStartHereCommand(program) {
       console.log(chalk.gray(`Next: ${mint('social hatch')} for conversational operations, or ${mint('social studio')} for browser status.\n`));
     });
 }
+
+registerStartHereCommand._private = {
+  PROVIDER_CHOICES,
+  providerNeedsApiKey,
+  providerMeta
+};
 
 module.exports = registerStartHereCommand;

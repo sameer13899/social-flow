@@ -12,6 +12,20 @@ function getTokenState(cfg) {
   };
 }
 
+function getAgentState(cfg) {
+  const raw = typeof cfg.getAgentConfig === 'function'
+    ? cfg.getAgentConfig()
+    : { provider: 'openai', model: '', apiKey: '' };
+  const provider = String(raw.provider || 'openai').trim().toLowerCase() || 'openai';
+  const needsApiKey = provider !== 'ollama';
+  return {
+    provider,
+    model: String(raw.model || '').trim(),
+    needsApiKey,
+    apiKeyConfigured: needsApiKey ? Boolean(String(raw.apiKey || '').trim()) : true
+  };
+}
+
 function buildReadinessReport(options = {}) {
   const cfg = options.config || config;
   const includeWarnings = options.includeWarnings !== false;
@@ -19,6 +33,7 @@ function buildReadinessReport(options = {}) {
   const activeProfile = cfg.getActiveProfile();
   const defaultApi = cfg.getDefaultApi();
   const tokenState = getTokenState(cfg);
+  const agentState = getAgentState(cfg);
   const onboardingCompleted = Boolean(cfg.hasCompletedOnboarding());
   const appCredentialsConfigured = Boolean(cfg.hasAppCredentials());
 
@@ -58,12 +73,23 @@ function buildReadinessReport(options = {}) {
     });
   }
 
+  if (agentState.needsApiKey && !agentState.apiKeyConfigured && includeWarnings) {
+    warnings.push({
+      code: 'agent_api_key_missing',
+      message: `Agent provider "${agentState.provider}" has no API key configured (needed for chat/copilot).`,
+      fix: `Open Studio Setup Concierge or run: social agent setup --provider ${agentState.provider} --api-key <key>`
+    });
+  }
+
   if (blockers.length) {
     nextActions.push('social setup');
     if (defaultApi) nextActions.push(`social auth login -a ${defaultApi}`);
   } else {
     nextActions.push('social start');
     nextActions.push('social doctor');
+  }
+  if (agentState.needsApiKey && !agentState.apiKeyConfigured) {
+    nextActions.push(`social agent setup --provider ${agentState.provider} --api-key <key>`);
   }
 
   return {
@@ -72,6 +98,7 @@ function buildReadinessReport(options = {}) {
     defaultApi,
     onboardingCompleted,
     appCredentialsConfigured,
+    agent: agentState,
     anyTokenConfigured: tokenState.anyConfigured,
     tokens: tokenState.byApi,
     blockers,

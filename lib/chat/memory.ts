@@ -1,6 +1,6 @@
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const appPaths = require('../app-paths');
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
@@ -34,12 +34,6 @@ function generateSessionId() {
   return `chat_${stamp}_${rnd}`;
 }
 
-function getHomeRoot() {
-  if (process.env.SOCIAL_CLI_HOME) return path.resolve(process.env.SOCIAL_CLI_HOME);
-  if (process.env.META_CLI_HOME) return path.resolve(process.env.META_CLI_HOME);
-  return os.homedir();
-}
-
 let cachedChatRoot = '';
 
 function uniqueRoots(list) {
@@ -55,10 +49,10 @@ function uniqueRoots(list) {
 }
 
 function candidateChatRoots() {
-  const home = getHomeRoot();
   return uniqueRoots([
-    path.join(home, '.social-cli', 'chat', 'sessions'),
-    path.join(home, '.meta-cli', 'chat', 'sessions'),
+    path.join(appPaths.migrateLegacyAppHome(), 'chat', 'sessions'),
+    ...appPaths.candidatePaths(['chat', 'sessions']).slice(1),
+    path.join(process.cwd(), '.social-flow-chat', 'sessions'),
     path.join(process.cwd(), '.social-cli-chat', 'sessions')
   ]);
 }
@@ -91,33 +85,33 @@ function chatRoot() {
   throw new Error('Unable to initialize chat session storage directory.');
 }
 
-function legacyChatRoot() {
-  return path.join(getHomeRoot(), '.meta-cli', 'chat', 'sessions');
-}
-
 function sessionPath(sessionId) {
   return path.join(chatRoot(), `${sanitizeSessionId(sessionId)}.json`);
 }
 
-function legacySessionPath(sessionId) {
-  return path.join(legacyChatRoot(), `${sanitizeSessionId(sessionId)}.json`);
+function sessionCandidates(sessionId) {
+  const fileName = `${sanitizeSessionId(sessionId)}.json`;
+  return candidateChatRoots().map((root) => path.join(root, fileName));
 }
 
 class PersistentMemory {
   constructor(sessionId) {
     this.id = sanitizeSessionId(sessionId) || generateSessionId();
     this.filePath = sessionPath(this.id);
-    this.legacyFilePath = legacySessionPath(this.id);
+    this.legacyFilePaths = sessionCandidates(this.id).filter((candidate) => candidate !== this.filePath);
   }
 
   exists() {
-    return fs.existsSync(this.filePath) || fs.existsSync(this.legacyFilePath);
+    return [this.filePath, ...this.legacyFilePaths].some((candidate) => fs.existsSync(candidate));
   }
 
   load() {
-    const current = readJson(this.filePath);
-    if (current) return current;
-    return readJson(this.legacyFilePath);
+    const candidates = [this.filePath, ...this.legacyFilePaths];
+    for (let i = 0; i < candidates.length; i += 1) {
+      const current = readJson(candidates[i]);
+      if (current) return current;
+    }
+    return null;
   }
 
   save(payload) {
@@ -131,7 +125,7 @@ class PersistentMemory {
 
   static list(limit = 20) {
     const seen = new Map();
-    uniqueRoots([chatRoot(), legacyChatRoot()]).forEach((root) => {
+    uniqueRoots(candidateChatRoots()).forEach((root) => {
       if (!fs.existsSync(root)) return;
       fs.readdirSync(root)
         .filter((name) => name.endsWith('.json'))

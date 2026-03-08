@@ -31,10 +31,6 @@ async function maybePromptForApiKey(provider) {
     return resolveApiKeyForProvider(p, cfg.apiKey);
   }
 
-  if (p === 'ollama') {
-    throw new Error('Provider "ollama" is disabled. Configure a cloud provider with a valid API key.');
-  }
-
   if (!process.stdout.isTTY) {
     throw new Error(`Missing LLM API key for provider "${p}".`);
   }
@@ -53,7 +49,7 @@ async function maybePromptForApiKey(provider) {
       type: 'confirm',
       name: 'save',
       default: false,
-      message: 'Save this key in ~/.social-cli/config.json? (not recommended for shared machines)'
+      message: 'Save this key in ~/.social-flow/config.json? (not recommended for shared machines)'
     }
   ]);
 

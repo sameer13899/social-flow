@@ -15,7 +15,10 @@ const { buildSessionTimeline } = require('../chat/timeline');
 const opsStorage = require('../ops/storage');
 const opsWorkflows = require('../ops/workflows');
 const opsRbac = require('../ops/rbac');
+const { buildReadinessReport } = require('../readiness');
 const { HostedPlatform } = require('../hosted/platform');
+const hostedStorage = require('../hosted/storage');
+const appPaths = require('../app-paths');
 
 const GUARD_MODES = new Set(['observe', 'approval', 'auto_safe']);
 const SOURCE_CONNECTORS = new Set(
@@ -50,18 +53,12 @@ function mimeFor(filePath) {
   return 'text/plain; charset=utf-8';
 }
 
-function bundledStudioAssetRoot() {
-  const forceBundled = String(process.env.SOCIAL_STUDIO_FORCE_BUNDLED || '').trim().toLowerCase();
-  if (forceBundled === '1' || forceBundled === 'true') {
-    const forcedCandidate = path.resolve(__dirname, '..', '..', 'assets', 'studio');
-    if (fs.existsSync(forcedCandidate) && fs.statSync(forcedCandidate).isDirectory()) return forcedCandidate;
-  }
-  const disableBundled = String(process.env.SOCIAL_STUDIO_DISABLE_BUNDLED || '').trim();
-  if (disableBundled === '1' || disableBundled.toLowerCase() === 'true') return '';
-  const candidate = path.resolve(__dirname, '..', '..', 'assets', 'studio');
-  if (!fs.existsSync(candidate)) return '';
-  if (!fs.statSync(candidate).isDirectory()) return '';
-  return candidate;
+function defaultStudioAssetCandidates() {
+  return [
+    path.resolve(__dirname, '..', '..', 'docs', 'agentic-frontend'),
+    path.resolve(__dirname, '..', '..', '..', 'docs', 'agentic-frontend'),
+    path.resolve(process.cwd(), 'docs', 'agentic-frontend')
+  ];
 }
 
 function studioAssetRoots() {
@@ -73,6 +70,7 @@ function studioAssetRoots() {
   const allowRoots = gatewayRoots();
   const seen = new Set();
   const out = [];
+  const explicitRoots = csvList(rawRoots);
 
   const addRoot = (item, options = {}) => {
     const enforceAllowRoot = options.enforceAllowRoot !== false;
@@ -82,12 +80,17 @@ function studioAssetRoots() {
     seen.add(key);
     if (enforceAllowRoot && !allowRoots.some((root) => isPathInsideRoot(root, resolved))) return;
     if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) return;
+    const indexPath = path.join(resolved, 'index.html');
+    if (!fs.existsSync(indexPath) || !fs.statSync(indexPath).isFile()) return;
     out.push(resolved);
   };
 
-  const bundledRoot = bundledStudioAssetRoot();
-  if (bundledRoot) addRoot(bundledRoot, { enforceAllowRoot: false });
-  csvList(rawRoots).forEach((item) => addRoot(item, { enforceAllowRoot: true }));
+  if (explicitRoots.length) {
+    explicitRoots.forEach((item) => addRoot(item, { enforceAllowRoot: true }));
+    return out;
+  }
+
+  defaultStudioAssetCandidates().forEach((item) => addRoot(item, { enforceAllowRoot: false }));
 
   return out;
 }
@@ -149,7 +152,7 @@ function sendFile(res, status, filePath, headers = {}) {
 function studioUiMissingPayload() {
   return {
     ok: false,
-    error: 'Bundled Studio frontend is not installed. Add a build to assets/studio or set SOCIAL_STUDIO_ASSET_DIR(S), then open /studio/app.'
+    error: 'Studio app frontend is not installed. Add docs/agentic-frontend or set SOCIAL_STUDIO_ASSET_DIR(S) to a valid frontend build.'
   };
 }
 
@@ -365,6 +368,9 @@ function configSnapshot() {
   const agent = typeof config.getAgentConfig === 'function'
     ? config.getAgentConfig()
     : { provider: 'openai', model: '', apiKey: '' };
+  const onboarding = typeof config.getOnboardingStatus === 'function'
+    ? config.getOnboardingStatus()
+    : { completed: false, completedAt: '', version: '' };
 
   return {
     activeProfile: typeof config.getActiveProfile === 'function' ? config.getActiveProfile() : 'default',
@@ -392,7 +398,14 @@ function configSnapshot() {
     agent: {
       provider: String(agent.provider || 'openai'),
       model: String(agent.model || ''),
-      apiKeyConfigured: Boolean(agent.apiKey)
+      apiKeyConfigured: String(agent.provider || 'openai').trim().toLowerCase() === 'ollama'
+        ? true
+        : Boolean(agent.apiKey)
+    },
+    onboarding: {
+      completed: Boolean(onboarding.completed),
+      completedAt: String(onboarding.completedAt || ''),
+      version: String(onboarding.version || '')
     },
     defaults: {
       facebookPageId: typeof config.getDefaultFacebookPageId === 'function' ? config.getDefaultFacebookPageId() : '',
@@ -418,6 +431,173 @@ function configSnapshot() {
     region: typeof config.getRegionConfig === 'function'
       ? config.getRegionConfig()
       : { country: '', timezone: '', regulatoryMode: 'standard' }
+  };
+}
+
+function titleFromKey(value) {
+  return String(value || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatDurationShort(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (minutes || !parts.length) parts.push(`${minutes}m`);
+  return parts.slice(0, 2).join(' ');
+}
+
+function selfHostedPathRows() {
+  const rows = [
+    { key: 'configDir', label: 'Config Directory', path: String(config.dir || '').trim() },
+    { key: 'configFile', label: 'Config File', path: String(config.file || '').trim() },
+    { key: 'gatewayLogsDir', label: 'Gateway Logs', path: gatewayLogsDir() },
+    { key: 'hostedHome', label: 'Hosted Data Home', path: hostedStorage.hostedRoot() },
+    { key: 'recipesDir', label: 'Recipes Directory', path: hostedStorage.resolveVersionedDir('recipes', 'SOCIAL_HOSTED_RECIPES_DIR') },
+    { key: 'triggersDir', label: 'Triggers Directory', path: hostedStorage.resolveVersionedDir('triggers', 'SOCIAL_HOSTED_TRIGGERS_DIR') },
+    { key: 'webchatDir', label: 'Webchat Directory', path: hostedStorage.resolveVersionedDir('webchat', 'SOCIAL_WEBCHAT_DIR') },
+    { key: 'baileysDir', label: 'Baileys Directory', path: hostedStorage.resolveVersionedDir('baileys', 'SOCIAL_BAILEYS_DIR') },
+    { key: 'opsDir', label: 'Ops Workspace Data', path: typeof opsStorage.opsRoot === 'function' ? opsStorage.opsRoot() : '' }
+  ];
+
+  return rows.map((row) => ({
+    ...row,
+    exists: Boolean(row.path) && fs.existsSync(row.path)
+  }));
+}
+
+function buildSelfHostedAdminSnapshot(server) {
+  const cfg = configSnapshot();
+  const pathRows = selfHostedPathRows();
+  const pathMap = Object.fromEntries(pathRows.map((row) => [row.key, row.path]));
+  const baseUrl = typeof server?.url === 'function' ? server.url() : '';
+  const corsOrigins = Array.from(server?.corsOrigins || []).filter(Boolean);
+  const setup = {
+    studioFrontendInstalled: studioAssetRoots().length > 0,
+    onboardingCompleted: Boolean(cfg?.onboarding?.completed),
+    defaultApi: String(cfg?.defaultApi || 'facebook'),
+    defaultTokenConfigured: Boolean(cfg?.tokens?.[cfg?.defaultApi || 'facebook']?.configured),
+    anyTokenConfigured: Object.values(cfg?.tokens || {}).some((row) => Boolean(row?.configured)),
+    appCredentialsConfigured: Boolean(cfg?.app?.appId) && Boolean(cfg?.app?.appSecretConfigured),
+    agentApiConfigured: Boolean(cfg?.agent?.apiKeyConfigured)
+  };
+  const security = {
+    apiKeyConfigured: Boolean(server?.apiKey),
+    apiKeyRequired: Boolean(server?.requireApiKey),
+    corsRestricted: corsOrigins.length > 0 || !server?.isLocalBind?.(),
+    corsOrigins,
+    rateLimitMax: Number(server?.rateLimitMax || 0) || 0,
+    rateLimitWindowMs: Number(server?.rateLimitWindowMs || 0) || 0,
+    hostedMasterKeyConfigured: Boolean(process.env.SOCIAL_HOSTED_MASTER_KEY),
+    hostedBootstrapApiKeyConfigured: Boolean(process.env.SOCIAL_HOSTED_BOOTSTRAP_API_KEY),
+    hostedBootstrapUserConfigured: Boolean(process.env.SOCIAL_HOSTED_BOOTSTRAP_USER_ID)
+  };
+
+  const checks = [
+    {
+      key: 'gateway_access',
+      ok: security.apiKeyConfigured && security.apiKeyRequired,
+      severity: 'required',
+      detail: security.apiKeyConfigured && security.apiKeyRequired
+        ? 'Gateway API key is configured and enforced for non-public routes.'
+        : 'Gateway API key is missing or not enforced yet.',
+      fix: 'Set SOCIAL_GATEWAY_API_KEY and SOCIAL_GATEWAY_REQUIRE_API_KEY=true.'
+    },
+    {
+      key: 'cors_policy',
+      ok: security.corsRestricted || server?.isLocalBind?.(),
+      severity: 'recommended',
+      detail: security.corsRestricted
+        ? `Cross-origin access is scoped to ${corsOrigins.length || 0} origin(s).`
+        : 'Gateway is using open local-development CORS defaults.',
+      fix: server?.isLocalBind?.()
+        ? 'Add SOCIAL_GATEWAY_CORS_ORIGINS before exposing Studio remotely.'
+        : 'Set SOCIAL_GATEWAY_CORS_ORIGINS to your Studio domain.'
+    },
+    {
+      key: 'hosted_secrets',
+      ok: security.hostedMasterKeyConfigured && security.hostedBootstrapApiKeyConfigured && security.hostedBootstrapUserConfigured,
+      severity: 'required',
+      detail: security.hostedMasterKeyConfigured && security.hostedBootstrapApiKeyConfigured && security.hostedBootstrapUserConfigured
+        ? 'Hosted vault/bootstrap secrets are configured.'
+        : 'One or more hosted encryption/bootstrap env vars are missing.',
+      fix: 'Set SOCIAL_HOSTED_MASTER_KEY, SOCIAL_HOSTED_BOOTSTRAP_API_KEY, and SOCIAL_HOSTED_BOOTSTRAP_USER_ID.'
+    },
+    {
+      key: 'studio_frontend',
+      ok: setup.studioFrontendInstalled,
+      severity: 'required',
+      detail: setup.studioFrontendInstalled
+        ? 'Studio frontend assets are available to the gateway.'
+        : 'Studio frontend assets are missing from the configured asset roots.',
+      fix: 'Install docs/agentic-frontend or point SOCIAL_STUDIO_ASSET_DIR(S) at a valid build.'
+    },
+    {
+      key: 'operator_onboarding',
+      ok: setup.onboardingCompleted && setup.defaultTokenConfigured && setup.agentApiConfigured,
+      severity: 'recommended',
+      detail: setup.onboardingCompleted && setup.defaultTokenConfigured && setup.agentApiConfigured
+        ? 'Core setup is complete for daily operator use.'
+        : 'Onboarding, default token, or agent API key setup is still incomplete.',
+      fix: 'Open Studio Setup Concierge, complete credentials, and finish onboarding.'
+    }
+  ];
+
+  const nextActions = [];
+  for (const row of checks) {
+    if (!row.ok && row.fix) nextActions.push(row.fix);
+  }
+
+  return {
+    service: 'social-api-gateway',
+    version: packageJson.version,
+    workspace: String(cfg?.activeProfile || 'default'),
+    runtime: {
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      pid: process.pid,
+      startedAt: String(server?.startedAt || ''),
+      uptime: formatDurationShort(
+        server?.startedAt
+          ? (Date.now() - Date.parse(server.startedAt)) / 1000
+          : process.uptime()
+      )
+    },
+    network: {
+      host: String(server?.host || '127.0.0.1'),
+      port: Number(server?.port || 1310) || 1310,
+      baseUrl,
+      localOnly: Boolean(server?.isLocalBind?.())
+    },
+    security,
+    setup,
+    paths: pathRows,
+    distribution: server?.hosted?.distributionModel ? server.hosted.distributionModel() : {},
+    architecture: server?.hosted?.defaultHostedSummary ? server.hosted.defaultHostedSummary() : {},
+    urls: {
+      health: baseUrl ? `${baseUrl}/api/health` : '/api/health',
+      status: baseUrl ? `${baseUrl}/api/status` : '/api/status',
+      studio: baseUrl ? `${baseUrl}/studio/app/` : '/studio/app/'
+    },
+    commands: {
+      doctor: 'social doctor',
+      status: 'social status',
+      start: 'social start',
+      studio: `social studio --url ${baseUrl || 'http://127.0.0.1:1310'}`,
+      upgrade: 'npm install -g @vishalgojha/social-flow@latest',
+      backup: `Back up ${pathMap.configDir || '<config-dir>'} and ${pathMap.hostedHome || '<hosted-home>'}.`
+    },
+    checks,
+    nextActions
   };
 }
 
@@ -775,11 +955,13 @@ function isPathInsideRoot(root, target) {
 }
 
 function gatewayRoots() {
-  const roots = [
+  const roots = appPaths.uniquePaths([
     path.resolve(process.cwd()),
+    appPaths.resolveAppHome(process.env),
+    process.env.SOCIAL_FLOW_HOME ? path.resolve(process.env.SOCIAL_FLOW_HOME) : '',
     process.env.SOCIAL_CLI_HOME ? path.resolve(process.env.SOCIAL_CLI_HOME) : '',
     process.env.META_CLI_HOME ? path.resolve(process.env.META_CLI_HOME) : ''
-  ].filter(Boolean);
+  ].filter(Boolean));
   return [...new Set(roots.map((x) => normalizeFsPathForCompare(x)))];
 }
 
@@ -997,7 +1179,10 @@ class ChatRuntime {
     this.agent = new AutonomousAgent({
       context: this.context,
       config,
-      options: { debug: Boolean(options.debug) }
+      options: {
+        debug: Boolean(options.debug),
+        requireExplicitApproval: true
+      }
     });
     this.resumed = false;
   }
@@ -1010,7 +1195,10 @@ class ChatRuntime {
     this.agent = new AutonomousAgent({
       context: this.context,
       config,
-      options: { debug: Boolean(this.options.debug) }
+      options: {
+        debug: Boolean(this.options.debug),
+        requireExplicitApproval: true
+      }
     });
     this.resumed = true;
   }
@@ -1072,6 +1260,7 @@ class GatewayServer {
     this.host = options.host || '127.0.0.1';
     const requestedPort = options.port !== undefined ? Number(options.port) : 1310;
     this.port = Number.isFinite(requestedPort) ? requestedPort : 1310;
+    this.startedAt = '';
     this.debug = Boolean(options.debug);
     this.apiKey = String(
       options.apiKey !== undefined
@@ -1407,18 +1596,27 @@ class GatewayServer {
     if (response.message) {
       this.broadcastWs('output', { sessionId, data: String(response.message || '') });
     }
-    if (actions.length) {
+    if (actions.length && response.needsInput) {
       this.broadcastWs('plan', {
         sessionId,
         steps: actions.map((step, idx) => ({
           id: idx + 1,
           tool: String(step.tool || ''),
           description: String(step.description || step.tool || ''),
-          params: step.params && typeof step.params === 'object' ? step.params : {}
+          params: step.params && typeof step.params === 'object' ? step.params : {},
+          risk: String(step.risk || '').trim()
         }))
       });
+    }
+    if (actions.length && !response.needsInput) {
       actions.forEach((_, idx) => {
-        this.broadcastWs('step_start', { sessionId, step: idx + 1 });
+        const step = actions[idx] || {};
+        this.broadcastWs('step_start', {
+          sessionId,
+          step: idx + 1,
+          tool: String(step.tool || ''),
+          summary: String(step.description || step.tool || 'Executing step')
+        });
       });
     }
     executed.forEach((row, idx) => {
@@ -1731,6 +1929,14 @@ class GatewayServer {
         distribution: this.hosted.distributionModel(),
         architecture: this.hosted.defaultHostedSummary(),
         rest: this.hosted.restCatalog()
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && route === '/api/self-host/admin') {
+      sendJson(res, 200, {
+        ok: true,
+        system: buildSelfHostedAdminSnapshot(this)
       });
       return;
     }
@@ -2540,6 +2746,7 @@ class GatewayServer {
     if (req.method === 'GET' && route === '/api/config') {
       sendJson(res, 200, {
         config: configSnapshot(),
+        readiness: buildReadinessReport(),
         now: new Date().toISOString()
       });
       return;
@@ -2613,6 +2820,19 @@ class GatewayServer {
           }
         }
 
+        const onboardingPatch = body.onboarding && typeof body.onboarding === 'object' ? body.onboarding : {};
+        if (Object.prototype.hasOwnProperty.call(onboardingPatch, 'completed')) {
+          const completed = toBool(onboardingPatch.completed, true);
+          if (completed && typeof config.markOnboardingComplete === 'function') {
+            config.markOnboardingComplete({ version: packageJson.version });
+            updated.push('onboarding.completed');
+          }
+          if (!completed && typeof config.clearOnboardingComplete === 'function') {
+            config.clearOnboardingComplete();
+            updated.push('onboarding.completed');
+          }
+        }
+
         if (!updated.length) {
           sendJson(res, 400, { ok: false, error: 'No config changes detected.' });
           return;
@@ -2622,6 +2842,7 @@ class GatewayServer {
           ok: true,
           updated,
           config: configSnapshot(),
+          readiness: buildReadinessReport(),
           now: new Date().toISOString()
         });
       } catch (error) {
@@ -3696,15 +3917,21 @@ class GatewayServer {
   async handleStatic(req, res, parsedUrl) {
     const route = parsedUrl.pathname || '/';
     const isStudioHomeRoute = route === '/studio'
-      || route === '/studio/'
-      || route === '/studio/context'
-      || route === '/studio/context/';
-    const isStudioAppRoute = route === '/studio/app'
-      || route === '/studio/app/'
+      || route === '/studio/';
+    const isStudioAppRoute = route === '/studio/app/'
       || route.startsWith('/studio/app/');
     if (isStudioHomeRoute) {
       res.writeHead(302, {
-        Location: '/studio/app',
+        Location: '/studio/app/',
+        'Cache-Control': 'no-store'
+      });
+      res.end();
+      return;
+    }
+
+    if (route === '/studio/app') {
+      res.writeHead(302, {
+        Location: '/studio/app/',
         'Cache-Control': 'no-store'
       });
       res.end();
@@ -3712,7 +3939,7 @@ class GatewayServer {
     }
 
     let assetRoute = route;
-    if (route === '/studio/app' || route === '/studio/app/') {
+    if (route === '/studio/app/') {
       assetRoute = '/';
     } else if (route.startsWith('/studio/app/')) {
       assetRoute = route.slice('/studio/app'.length);
@@ -3721,20 +3948,20 @@ class GatewayServer {
     if (route === '/' || route === '/index.html') {
       sendJson(res, 410, {
         ok: false,
-        error: 'Root route is disabled. Open /studio/app for bundled Studio UI or /api/status?doctor=1 for diagnostics.'
+        error: 'Root route is disabled. Open /studio or /studio/app/ for Studio, or /api/status?doctor=1 for diagnostics.'
       });
       return;
     }
 
-    const staticFile = resolveStudioAsset(assetRoute);
-    if (staticFile) {
-      const isHtml = staticFile.toLowerCase().endsWith('.html');
-      sendFile(res, 200, staticFile, {
-        'Cache-Control': isHtml ? 'no-store' : 'public, max-age=300'
-      });
-      return;
-    }
     if (isStudioAppRoute) {
+      const staticFile = resolveStudioAsset(assetRoute);
+      if (staticFile) {
+        const isHtml = staticFile.toLowerCase().endsWith('.html');
+        sendFile(res, 200, staticFile, {
+          'Cache-Control': isHtml ? 'no-store' : 'public, max-age=300'
+        });
+        return;
+      }
       sendJson(res, 404, studioUiMissingPayload());
       return;
     }
@@ -3810,6 +4037,7 @@ class GatewayServer {
     const address = this.server.address();
     const port = typeof address === 'object' && address ? address.port : this.port;
     this.port = port;
+    this.startedAt = new Date().toISOString();
     if (this.hosted && typeof this.hosted.start === 'function') {
       this.hosted.start();
     }
@@ -3817,7 +4045,7 @@ class GatewayServer {
 
   async stop() {
     if (this.hosted && typeof this.hosted.stop === 'function') {
-      this.hosted.stop();
+      await this.hosted.stop();
     }
     if (this.wsServer) {
       for (const ws of this.wsClients) {
@@ -3834,6 +4062,7 @@ class GatewayServer {
     if (!this.server) return;
     await new Promise((resolve) => this.server.close(() => resolve()));
     this.server = null;
+    this.startedAt = '';
   }
 
   url() {

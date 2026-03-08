@@ -58,7 +58,8 @@ function printSetupReport(report, title) {
     kv('Default API', chalk.cyan(report.defaultApi || 'facebook'), { labelWidth: 14 }),
     kv('Tokens', report.anyTokenConfigured ? formatBadge('READY', { tone: 'success' }) : formatBadge('MISSING', { tone: 'warn' }), { labelWidth: 14 }),
     kv('Onboarding', report.onboardingCompleted ? formatBadge('DONE', { tone: 'success' }) : formatBadge('PENDING', { tone: 'warn' }), { labelWidth: 14 }),
-    kv('App Credentials', report.appCredentialsConfigured ? formatBadge('READY', { tone: 'success' }) : formatBadge('PENDING', { tone: 'warn' }), { labelWidth: 14 })
+    kv('App Credentials', report.appCredentialsConfigured ? formatBadge('READY', { tone: 'success' }) : formatBadge('PENDING', { tone: 'warn' }), { labelWidth: 14 }),
+    kv('Agent AI', report.agent && report.agent.apiKeyConfigured ? formatBadge('READY', { tone: 'success' }) : formatBadge('PENDING', { tone: 'warn' }), { labelWidth: 14 })
   ];
 
   const issueRows = [];

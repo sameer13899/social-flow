@@ -9,7 +9,15 @@ const node_crypto_1 = require("node:crypto");
 const node_fs_1 = require("node:fs");
 const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
-const STORE_FILE = node_path_1.default.join(node_os_1.default.homedir(), ".social-cli", "idempotency.json");
+function storeFilePath() {
+    if (process.env.SOCIAL_FLOW_HOME)
+        return node_path_1.default.join(node_path_1.default.resolve(process.env.SOCIAL_FLOW_HOME), "idempotency.json");
+    if (process.env.SOCIAL_CLI_HOME)
+        return node_path_1.default.join(node_path_1.default.resolve(process.env.SOCIAL_CLI_HOME), ".social-flow", "idempotency.json");
+    if (process.env.META_CLI_HOME)
+        return node_path_1.default.join(node_path_1.default.resolve(process.env.META_CLI_HOME), ".social-flow", "idempotency.json");
+    return node_path_1.default.join(node_os_1.default.homedir(), ".social-flow", "idempotency.json");
+}
 function buildPayload(intent) {
     return JSON.stringify({
         action: intent.action,
@@ -19,7 +27,7 @@ function buildPayload(intent) {
 }
 async function readStore() {
     try {
-        const raw = await node_fs_1.promises.readFile(STORE_FILE, "utf8");
+        const raw = await node_fs_1.promises.readFile(storeFilePath(), "utf8");
         return JSON.parse(raw);
     }
     catch {
@@ -27,8 +35,9 @@ async function readStore() {
     }
 }
 async function writeStore(store) {
-    await node_fs_1.promises.mkdir(node_path_1.default.dirname(STORE_FILE), { recursive: true });
-    await node_fs_1.promises.writeFile(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
+    const file = storeFilePath();
+    await node_fs_1.promises.mkdir(node_path_1.default.dirname(file), { recursive: true });
+    await node_fs_1.promises.writeFile(file, JSON.stringify(store, null, 2), "utf8");
 }
 function buildIdempotencyKey(intent) {
     return (0, node_crypto_1.createHash)("sha256").update(buildPayload(intent)).digest("hex");

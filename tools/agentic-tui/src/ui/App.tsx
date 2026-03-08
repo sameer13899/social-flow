@@ -110,9 +110,37 @@ async function resolveLogDir(): Promise<string> {
   return candidates[0];
 }
 
+function socialFlowConfigCandidates(): string[] {
+  const explicit = process.env.SOCIAL_FLOW_HOME ? path.resolve(process.env.SOCIAL_FLOW_HOME) : "";
+  const legacyRoot = process.env.SOCIAL_CLI_HOME
+    ? path.resolve(process.env.SOCIAL_CLI_HOME)
+    : process.env.META_CLI_HOME
+      ? path.resolve(process.env.META_CLI_HOME)
+      : os.homedir();
+  const currentRoot = explicit || path.join(legacyRoot, ".social-flow");
+  const parent = path.dirname(currentRoot);
+  const out = [
+    path.join(currentRoot, "config.json"),
+    path.join(parent, ".social-cli", "config.json"),
+    path.join(parent, ".meta-cli", "config.json")
+  ];
+  const seen = new Set<string>();
+  return out.filter((item) => {
+    const key = process.platform === "win32" ? item.toLowerCase() : item;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 async function loadConfigSnapshot(): Promise<ConfigSnapshot> {
-  const cfgPath = path.join(os.homedir(), ".social-cli", "config.json");
-  const raw = await readFile(cfgPath, "utf8");
+  let raw = "";
+  for (const candidate of socialFlowConfigCandidates()) {
+    if (!(await exists(candidate))) continue;
+    raw = await readFile(candidate, "utf8");
+    if (raw) break;
+  }
+  if (!raw) throw new Error("Social Flow config not found.");
   const parsed = JSON.parse(raw) as {
     token?: string;
     tokens?: {

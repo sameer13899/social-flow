@@ -1,170 +1,241 @@
-# Deployment
+# Self-Hosted Deployment
 
-This repo is configured for Railway via [railway.json](./railway.json):
+Social Flow is designed to run as a self-hosted control plane with SaaS-style UX.
 
-- Build: `npm run build`
-- Start: `node bin/social.js --no-banner gateway --host 0.0.0.0 --port $PORT --require-api-key`
+This document covers:
 
-## Railway CLI (Shell)
+- local or server install
+- Docker deployment
+- persistence and storage layout
+- first boot and hardening
+- upgrades
+- backup and restore
 
-Run from repo root:
+## Deployment Modes
 
-```bash
-railway up
-```
+### 1. Single-machine install
 
-## First-Time Setup
+Good for:
 
-```bash
-npm i -g @railway/cli
-railway login
-railway link
-railway up
-```
+- owner-operated deployments
+- agency internal ops
+- Windows or Linux workstation/server installs
 
-## Deploy Specific Service/Environment
-
-```bash
-railway up --service <service-name> --environment <environment-name>
-```
-
-## Quick Verify
-
-After deploy, verify the service binds Railway `PORT` and is healthy:
+Typical flow:
 
 ```bash
-railway logs
+npm install -g @vishalgojha/social-flow
+social start-here
+social start
+social studio --url http://127.0.0.1:1310
 ```
 
-Look for a line like:
+### 2. Docker / Compose
 
-`Social API Gateway is running.`
+Good for:
 
-and then hit:
-
-`/api/health`
-
-## Hosted Channel Smoke Checklist (Webchat + Baileys)
-
-Run this against your deployed URL after basic health is green:
-
-```bash
-BASE_URL="https://<railway-service-domain>"
-GATEWAY_KEY="<SOCIAL_GATEWAY_API_KEY>"
-API_KEY="<SOCIAL_HOSTED_BOOTSTRAP_API_KEY>"
-```
-
-1. Create webchat widget key (save `key.key` from response):
-
-```bash
-curl -sS -X POST "$BASE_URL/api/channels/webchat/widget-keys" \
-  -H "content-type: application/json" \
-  -H "x-gateway-key: $GATEWAY_KEY" \
-  -H "x-api-key: $API_KEY" \
-  -d '{"label":"railway-e2e"}'
-```
-
-2. Start public webchat session with that widget key (save `sessionToken` and `session.id`):
-
-```bash
-curl -sS -X POST "$BASE_URL/api/webchat/public/session/start" \
-  -H "content-type: application/json" \
-  -d '{"widgetKey":"<KEY_FROM_STEP_1>","visitorId":"railway-e2e-visitor"}'
-```
-
-3. Send public inbound message and expect `ok: true`:
-
-```bash
-curl -sS -X POST "$BASE_URL/api/webchat/public/session/message" \
-  -H "content-type: application/json" \
-  -d '{"sessionToken":"<SESSION_TOKEN_FROM_STEP_2>","text":"hello from railway e2e"}'
-```
-
-4. Fetch operator-side messages and verify inbound event is present:
-
-```bash
-curl -sS "$BASE_URL/api/channels/webchat/sessions/<SESSION_ID_FROM_STEP_2>/messages?limit=20" \
-  -H "x-gateway-key: $GATEWAY_KEY" \
-  -H "x-api-key: $API_KEY"
-```
-
-5. Create Baileys session (save `session.id`):
-
-```bash
-curl -sS -X POST "$BASE_URL/api/channels/baileys/sessions" \
-  -H "content-type: application/json" \
-  -H "x-gateway-key: $GATEWAY_KEY" \
-  -H "x-api-key: $API_KEY" \
-  -d '{"label":"railway-e2e","phone":"<E164_OR_DIGITS_OPTIONAL>"}'
-```
-
-6. Connect Baileys session and verify there is no dependency-missing error:
-
-```bash
-curl -sS -X POST "$BASE_URL/api/channels/baileys/sessions/<BAILEYS_SESSION_ID>/connect" \
-  -H "content-type: application/json" \
-  -H "x-gateway-key: $GATEWAY_KEY" \
-  -H "x-api-key: $API_KEY" \
-  -d '{}'
-```
-
-Expected:
-
-- No `BAILEYS_DEPENDENCY_MISSING` error.
-- Session transitions to `connecting` and exposes a `qr` for pairing.
-- After QR scan, session transitions to `connected`.
-
-## Required Railway Variables
-
-Set these in Railway service variables before exposing frontend traffic:
-
-- `SOCIAL_GATEWAY_API_KEY`: long random secret used by `x-gateway-key`
-- `SOCIAL_GATEWAY_REQUIRE_API_KEY=true`
-- `SOCIAL_GATEWAY_CORS_ORIGINS=https://<your-frontend-domain>`
-- `SOCIAL_HOSTED_MASTER_KEY`: encryption secret for BYOK key vault (AES-256-GCM)
-- `SOCIAL_HOSTED_BOOTSTRAP_API_KEY`: first user `x-api-key` for hosted routes
-- `SOCIAL_HOSTED_BOOTSTRAP_USER_ID`: bootstrap user id (example: `default`)
-
-Optional hardening:
-
-- `SOCIAL_GATEWAY_RATE_MAX=180`
-- `SOCIAL_GATEWAY_RATE_WINDOW_MS=60000`
-- `SOCIAL_HOSTED_RECIPES_DIR=/data/recipes`
-- `SOCIAL_HOSTED_TRIGGERS_DIR=/data/triggers`
-
-## Frontend Integration (Remote)
-
-For browser frontend calls:
-
-- Base URL: `https://<railway-service-domain>`
-- REST auth: include header `x-gateway-key: <SOCIAL_GATEWAY_API_KEY>`
-- WebSocket auth: connect to `wss://<railway-service-domain>/ws?gatewayKey=<SOCIAL_GATEWAY_API_KEY>`
-
-From CLI, you can open your external frontend directly:
-
-```bash
-social studio --url https://<railway-service-domain> --frontend-url https://<frontend-domain>
-```
-
-## Docker (Self-Hosted)
-
-Build and run with compose:
+- VPS hosting
+- team-shared internal deployment
+- persistent self-hosted environments behind a reverse proxy
 
 ```bash
 docker compose -f docker-compose.hosted.yml up -d --build
 ```
 
-Hosted REST routes require both:
+## Persistent Data
 
-- `x-gateway-key` (gateway-level access, if required)
-- `x-api-key` (per-user hosted access)
+Social Flow stores state on disk. Back this up.
 
-## Rollback (One Command)
+Default locations:
 
-If latest deploy is bad, revert commit, push, and redeploy:
+- config: `~/.social-flow/config.json`
+- chat sessions: `~/.social-flow/chat/`
+- hosted data: `~/.social-flow/hosted/`
+- ops workspace state: `~/.social-flow/ops/`
+
+Hosted/channel subdirectories may include:
+
+- recipes
+- triggers
+- webchat
+- baileys
+- gateway logs
+
+Overrideable roots:
+
+- `SOCIAL_FLOW_HOME`
+- `SOCIAL_CLI_HOME`
+- `META_CLI_HOME` (backward compatibility)
+- `SOCIAL_HOSTED_HOME`
+- `SOCIAL_HOSTED_RECIPES_DIR`
+- `SOCIAL_HOSTED_TRIGGERS_DIR`
+- `SOCIAL_WEBCHAT_DIR`
+- `SOCIAL_BAILEYS_DIR`
+
+Recommendation:
+
+- keep config and hosted data on a persistent disk
+- do not rely on ephemeral container filesystems
+- snapshot both config and hosted roots together
+
+## Required Environment Variables
+
+For any serious self-hosted deployment, set:
+
+- `SOCIAL_GATEWAY_API_KEY`
+- `SOCIAL_GATEWAY_REQUIRE_API_KEY=true`
+- `SOCIAL_HOSTED_MASTER_KEY`
+- `SOCIAL_HOSTED_BOOTSTRAP_API_KEY`
+- `SOCIAL_HOSTED_BOOTSTRAP_USER_ID`
+
+Recommended when exposing Studio remotely:
+
+- `SOCIAL_GATEWAY_CORS_ORIGINS=https://studio.yourdomain.com`
+- `SOCIAL_GATEWAY_RATE_MAX=180`
+- `SOCIAL_GATEWAY_RATE_WINDOW_MS=60000`
+
+Optional storage overrides:
+
+- `SOCIAL_HOSTED_HOME=/data/social-flow`
+- `SOCIAL_HOSTED_RECIPES_DIR=/data/social-flow/recipes`
+- `SOCIAL_HOSTED_TRIGGERS_DIR=/data/social-flow/triggers`
+
+## First Boot Checklist
+
+1. Start the gateway.
 
 ```bash
-git revert --no-edit <bad_commit_sha> && git push origin main && railway up
+social start
 ```
 
-Replace `<bad_commit_sha>` with the commit to undo.
+2. Verify health.
+
+```bash
+curl http://127.0.0.1:1310/api/health
+```
+
+3. Open Studio.
+
+```bash
+social studio --url http://127.0.0.1:1310
+```
+
+4. In Studio, finish:
+
+- Setup Concierge
+- Workspace Admin
+- Ops Launchpad
+
+5. Confirm these are green:
+
+- gateway key configured and enforced
+- default token configured
+- agent API key configured
+- Studio assets installed
+- hosted master/bootstrap secrets configured
+
+## Reverse Proxy / HTTPS
+
+If you expose Social Flow outside localhost:
+
+- terminate TLS at a reverse proxy
+- restrict CORS to your Studio origin
+- keep `SOCIAL_GATEWAY_REQUIRE_API_KEY=true`
+- do not expose admin surfaces without a gateway key
+
+Recommended topology:
+
+- `https://studio.yourdomain.com` -> reverse proxy -> `http://127.0.0.1:1310`
+
+## Upgrade Playbook
+
+### Global npm install
+
+```bash
+npm install -g @vishalgojha/social-flow@latest
+social doctor
+social start
+```
+
+### Repo / pinned deployment
+
+```bash
+git pull
+npm ci
+npm run build
+node bin/social.js --no-banner gateway --host 0.0.0.0 --port 1310 --require-api-key
+```
+
+After every upgrade:
+
+- run `social doctor`
+- open Studio Workspace Admin
+- review system checks
+- confirm recipes, triggers, webchat, and Baileys paths still exist
+
+## Backup
+
+Back up both:
+
+- `~/.social-flow/`
+- your explicit hosted storage directories if overridden by env vars
+
+Minimum backup set:
+
+- `config.json`
+- `hosted/`
+- `ops/`
+- `chat/`
+
+Recommended cadence:
+
+- daily snapshot for production
+- before every upgrade
+- before changing storage paths or env vars
+
+## Restore
+
+1. Stop the gateway.
+2. Restore the config and hosted data directories.
+3. Reapply the same env vars as the original deployment.
+4. Start the gateway.
+5. Open Studio Workspace Admin and verify:
+
+- storage paths present
+- gateway security checks green
+- invites, roles, recipes, triggers, and logs visible
+
+## Docker Notes
+
+When using Docker, mount persistent volumes for:
+
+- config home
+- hosted data
+- logs
+
+Example concerns:
+
+- do not rebuild into anonymous volumes only
+- keep Baileys auth state on persistent storage
+- keep webchat session state on persistent storage
+
+## Smoke Checks
+
+Use these after first deploy or after upgrades:
+
+- `GET /api/health`
+- `GET /api/status`
+- `GET /api/self-host/admin`
+- Studio loads at `/studio/app/`
+- Setup Concierge shows saved config
+- Workspace Admin shows green hardening checks
+- Logs screen returns recent entries
+
+## Studio Surfaces For Admins
+
+The main self-hosted admin surfaces are:
+
+- Setup Concierge: credentials and onboarding
+- Workspace Admin: hardening, paths, invites, roles, activity
+- Ops Launchpad: guardrails, handoff, morning ops
+- Logs: gateway/runtime inspection

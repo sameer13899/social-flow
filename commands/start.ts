@@ -10,12 +10,7 @@ function runForeground(args) {
   return new Promise((resolve, reject) => {
     const binPath = path.join(__dirname, '..', 'bin', 'social.js');
     const child = spawn(process.execPath, [binPath, '--no-banner', 'gateway', ...args], {
-      stdio: 'inherit',
-      env: {
-        ...process.env,
-        SOCIAL_STUDIO_FORCE_BUNDLED: '1',
-        SOCIAL_STUDIO_DISABLE_BUNDLED: '0'
-      }
+      stdio: 'inherit'
     });
     child.on('error', reject);
     child.on('close', (code) => {

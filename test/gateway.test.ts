@@ -179,7 +179,7 @@ module.exports = [
         assert.equal(root.status, 410);
         assert.equal(String(root.headers['content-type'] || '').includes('application/json'), true);
         assert.equal(
-          String(root.raw || '').includes('/studio/app for bundled Studio UI'),
+          String(root.raw || '').includes('Open /studio or /studio/app/ for Studio'),
           true
         );
 
@@ -197,7 +197,7 @@ module.exports = [
     }
   },
   {
-    name: 'gateway studio route redirects to bundled studio app',
+    name: 'gateway studio route redirects to studio app',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
@@ -210,7 +210,7 @@ module.exports = [
           pathName: '/studio'
         });
         assert.equal(studio.status, 302);
-        assert.equal(String(studio.headers.location || ''), '/studio/app');
+        assert.equal(String(studio.headers.location || ''), '/studio/app/');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
@@ -218,35 +218,10 @@ module.exports = [
     }
   },
   {
-    name: 'gateway studio context alias redirects to bundled studio app',
+    name: 'gateway studio app route redirects to trailing slash',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
-      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
-      try {
-        await server.start();
-        const studio = await requestRaw({
-          port: server.port,
-          method: 'GET',
-          pathName: '/studio/context'
-        });
-        assert.equal(studio.status, 302);
-        assert.equal(String(studio.headers.location || ''), '/studio/app');
-      } finally {
-        await server.stop();
-        process.env.META_CLI_HOME = oldHome;
-      }
-    }
-  },
-  {
-    name: 'gateway bundled studio app route serves static frontend',
-    fn: async () => {
-      const oldHome = process.env.META_CLI_HOME;
-      const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
-      const oldDisableBundled = process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
-      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
-      process.env.SOCIAL_STUDIO_ASSET_DIRS = path.resolve(process.cwd(), 'docs', 'agentic-frontend');
-      process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = '1';
       const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
       try {
         await server.start();
@@ -255,25 +230,41 @@ module.exports = [
           method: 'GET',
           pathName: '/studio/app'
         });
-        assert.equal(app.status, 200);
-        assert.equal(String(app.headers['content-type'] || '').includes('text/html'), true);
-        assert.equal(String(app.raw || '').includes('Social Flow Agentic Frontend Screens'), true);
+        assert.equal(app.status, 302);
+        assert.equal(String(app.headers.location || ''), '/studio/app/');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
-        if (oldStudioDirs === undefined) delete process.env.SOCIAL_STUDIO_ASSET_DIRS;
-        else process.env.SOCIAL_STUDIO_ASSET_DIRS = oldStudioDirs;
-        if (oldDisableBundled === undefined) delete process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
-        else process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = oldDisableBundled;
       }
     }
   },
   {
-    name: 'gateway bundled studio app route works when cwd is outside repo root',
+    name: 'gateway studio app route serves working frontend by default',
+    fn: async () => {
+      const oldHome = process.env.META_CLI_HOME;
+      process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
+      try {
+        await server.start();
+        const app = await requestRaw({
+          port: server.port,
+          method: 'GET',
+          pathName: '/studio/app/'
+        });
+        assert.equal(app.status, 200);
+        assert.equal(String(app.headers['content-type'] || '').includes('text/html'), true);
+        assert.equal(String(app.raw || '').includes('Social Flow Studio'), true);
+      } finally {
+        await server.stop();
+        process.env.META_CLI_HOME = oldHome;
+      }
+    }
+  },
+  {
+    name: 'gateway studio app route works when cwd is outside repo root',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
-      const oldDisableBundled = process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
       const oldCwd = process.cwd();
       const externalCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-cwd-'));
       const externalStudioDir = path.join(externalCwd, 'studio-assets');
@@ -284,12 +275,11 @@ module.exports = [
       try {
         process.chdir(externalCwd);
         process.env.SOCIAL_STUDIO_ASSET_DIRS = externalStudioDir;
-        process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = '1';
         await server.start();
         const app = await requestRaw({
           port: server.port,
           method: 'GET',
-          pathName: '/studio/app'
+          pathName: '/studio/app/'
         });
         assert.equal(app.status, 200);
         assert.equal(String(app.headers['content-type'] || '').includes('text/html'), true);
@@ -301,39 +291,39 @@ module.exports = [
         process.env.META_CLI_HOME = oldHome;
         if (oldStudioDirs === undefined) delete process.env.SOCIAL_STUDIO_ASSET_DIRS;
         else process.env.SOCIAL_STUDIO_ASSET_DIRS = oldStudioDirs;
-        if (oldDisableBundled === undefined) delete process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
-        else process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = oldDisableBundled;
       }
     }
   },
   {
-    name: 'gateway studio app route returns missing-frontend error when bundled assets are disabled',
+    name: 'gateway studio app route returns missing-frontend error when explicit asset roots have no frontend',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
-      const oldDisableBundled = process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
+      const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
+      const emptyStudioDir = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-empty-studio-'));
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
-      process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = '1';
+      process.env.SOCIAL_STUDIO_ASSET_DIRS = emptyStudioDir;
       const server = createGatewayServer({ host: '127.0.0.1', port: 0 });
       try {
         await server.start();
         const app = await requestRaw({
           port: server.port,
           method: 'GET',
-          pathName: '/studio/app'
+          pathName: '/studio/app/'
         });
         assert.equal(app.status, 404);
         assert.equal(String(app.headers['content-type'] || '').includes('application/json'), true);
-        assert.equal(String(app.raw || '').includes('Bundled Studio frontend is not installed'), true);
+        assert.equal(String(app.raw || '').includes('Studio app frontend is not installed'), true);
       } finally {
         await server.stop();
+        fs.rmSync(emptyStudioDir, { recursive: true, force: true });
         process.env.META_CLI_HOME = oldHome;
-        if (oldDisableBundled === undefined) delete process.env.SOCIAL_STUDIO_DISABLE_BUNDLED;
-        else process.env.SOCIAL_STUDIO_DISABLE_BUNDLED = oldDisableBundled;
+        if (oldStudioDirs === undefined) delete process.env.SOCIAL_STUDIO_ASSET_DIRS;
+        else process.env.SOCIAL_STUDIO_ASSET_DIRS = oldStudioDirs;
       }
     }
   },
   {
-    name: 'gateway studio route is reserved even when static asset roots are configured',
+    name: 'gateway studio route keeps redirect behavior even when static asset roots are configured',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       const oldStudioDirs = process.env.SOCIAL_STUDIO_ASSET_DIRS;
@@ -348,7 +338,7 @@ module.exports = [
           pathName: '/studio'
         });
         assert.equal(studio.status, 302);
-        assert.equal(String(studio.headers.location || ''), '/studio/app');
+        assert.equal(String(studio.headers.location || ''), '/studio/app/');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
@@ -435,12 +425,70 @@ module.exports = [
         });
         assert.equal(res.status, 200);
         assert.equal(Boolean(res.data.config), true);
+        assert.equal(Boolean(res.data.readiness), true);
         assert.equal(typeof res.data.config.tokens.facebook.configured, 'boolean');
         assert.equal(typeof res.data.config.agent.apiKeyConfigured, 'boolean');
+        assert.equal(typeof res.data.config.onboarding.completed, 'boolean');
         assert.equal(typeof res.data.config.industry.legacySelected, 'string');
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
+      }
+    }
+  },
+  {
+    name: 'gateway self-host admin endpoint exposes deployment snapshot',
+    fn: async () => {
+      const oldHome = process.env.META_CLI_HOME;
+      const envKeys = [
+        'SOCIAL_HOSTED_MASTER_KEY',
+        'SOCIAL_HOSTED_BOOTSTRAP_API_KEY',
+        'SOCIAL_HOSTED_BOOTSTRAP_USER_ID',
+        'SOCIAL_HOSTED_HOME'
+      ];
+      const prevEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+      const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
+      process.env.META_CLI_HOME = tempHome;
+      process.env.SOCIAL_HOSTED_MASTER_KEY = 'master-key-test-value';
+      process.env.SOCIAL_HOSTED_BOOTSTRAP_API_KEY = 'bootstrap-key-test-value';
+      process.env.SOCIAL_HOSTED_BOOTSTRAP_USER_ID = 'default';
+      process.env.SOCIAL_HOSTED_HOME = path.join(tempHome, 'hosted-home');
+      const server = createGatewayServer({
+        host: '127.0.0.1',
+        port: 0,
+        apiKey: 'test-secret',
+        requireApiKey: true,
+        corsOrigins: 'https://studio.local'
+      });
+      try {
+        await server.start();
+        const res = await requestJson({
+          port: server.port,
+          method: 'GET',
+          pathName: '/api/self-host/admin',
+          headers: { 'X-Gateway-Key': 'test-secret' }
+        });
+        assert.equal(res.status, 200);
+        assert.equal(res.data.ok, true);
+        assert.equal(res.data.system.service, 'social-api-gateway');
+        assert.equal(res.data.system.version, require('../package.json').version);
+        assert.equal(res.data.system.security.apiKeyRequired, true);
+        assert.equal(res.data.system.security.apiKeyConfigured, true);
+        assert.equal(res.data.system.security.corsRestricted, true);
+        assert.equal(res.data.system.setup.studioFrontendInstalled, true);
+        assert.equal(Array.isArray(res.data.system.paths), true);
+        assert.equal(res.data.system.paths.some((row) => row.key === 'configFile' && String(row.path || '').includes('.social-flow')), true);
+        assert.equal(Array.isArray(res.data.system.checks), true);
+        assert.equal(res.data.system.checks.some((row) => row.key === 'gateway_access'), true);
+        assert.equal(typeof res.data.system.commands.upgrade, 'string');
+        assert.equal(String(res.data.system.urls.studio || '').includes('/studio/app/'), true);
+      } finally {
+        await server.stop();
+        process.env.META_CLI_HOME = oldHome;
+        envKeys.forEach((key) => {
+          if (prevEnv[key] === undefined) delete process.env[key];
+          else process.env[key] = prevEnv[key];
+        });
       }
     }
   },
@@ -470,6 +518,9 @@ module.exports = [
               provider: 'openai',
               model: 'gpt-4.1-mini',
               apiKey: 'sk-test-1234'
+            },
+            onboarding: {
+              completed: true
             }
           }
         });
@@ -484,6 +535,8 @@ module.exports = [
         assert.equal(saveRes.data.updated.includes('agent.provider'), true);
         assert.equal(saveRes.data.updated.includes('agent.model'), true);
         assert.equal(saveRes.data.updated.includes('agent.apiKey'), true);
+        assert.equal(saveRes.data.updated.includes('onboarding.completed'), true);
+        assert.equal(Boolean(saveRes.data.readiness), true);
 
         const configRes = await requestJson({
           port: server.port,
@@ -500,6 +553,8 @@ module.exports = [
         assert.equal(configRes.data.config.agent.provider, 'openai');
         assert.equal(configRes.data.config.agent.model, 'gpt-4.1-mini');
         assert.equal(configRes.data.config.agent.apiKeyConfigured, true);
+        assert.equal(configRes.data.config.onboarding.completed, true);
+        assert.equal(configRes.data.readiness.ok, true);
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
@@ -833,7 +888,7 @@ module.exports = [
     }
   },
   {
-    name: 'gateway chat deterministic command executes immediately without pending confirmation',
+    name: 'gateway chat deterministic command requires explicit approval before execution',
     fn: async () => {
       const oldHome = process.env.META_CLI_HOME;
       process.env.META_CLI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-gw-test-'));
@@ -867,10 +922,32 @@ module.exports = [
         assert.equal(msgRes.status, 200);
         assert.equal(msgRes.data.ok, true);
         assert.equal(Array.isArray(msgRes.data.executed), true);
-        assert.equal(msgRes.data.executed.length, 1);
+        assert.equal(msgRes.data.executed.length, 0);
         assert.equal(Array.isArray(msgRes.data.pendingActions), true);
-        assert.equal(msgRes.data.pendingActions.length, 0);
+        assert.equal(msgRes.data.pendingActions.length, 1);
+        assert.equal(msgRes.data.response.needsInput, true);
+        assert.equal(msgRes.data.response.actions[0].tool, 'auth.status');
         assert.equal(Array.isArray(msgRes.data.timeline), true);
+
+        const approveRes = await requestJson({
+          port: server.port,
+          method: 'POST',
+          pathName: '/api/chat/message',
+          body: {
+            sessionId: startRes.data.sessionId,
+            message: 'yes'
+          }
+        });
+
+        assert.equal(approveRes.status, 200);
+        assert.equal(approveRes.data.ok, true);
+        assert.equal(Array.isArray(approveRes.data.executed), true);
+        assert.equal(approveRes.data.executed.length, 1);
+        assert.equal(approveRes.data.executed[0].tool, 'auth.status');
+        assert.equal(Array.isArray(approveRes.data.pendingActions), true);
+        assert.equal(approveRes.data.pendingActions.length, 0);
+        assert.equal(approveRes.data.response.needsInput, false);
+        assert.equal(Array.isArray(approveRes.data.timeline), true);
       } finally {
         await server.stop();
         process.env.META_CLI_HOME = oldHome;
@@ -1424,6 +1501,9 @@ module.exports = [
         assert.equal(tools.data.ok, true);
         assert.equal(Array.isArray(tools.data.tools), true);
         assert.equal(tools.data.tools.some((row) => row.key === 'meta.status'), true);
+        assert.equal(tools.data.tools.some((row) => row.key === 'browser.fetch_page'), true);
+        assert.equal(tools.data.tools.some((row) => row.key === 'browser.session_create'), true);
+        assert.equal(tools.data.tools.some((row) => row.key === 'browser.goto'), true);
 
         const agents = await requestJson({
           port: server.port,
@@ -1435,6 +1515,7 @@ module.exports = [
         assert.equal(agents.data.ok, true);
         assert.equal(Array.isArray(agents.data.agents), true);
         assert.equal(agents.data.agents.some((row) => row.slug === 'ops-agent'), true);
+        assert.equal(agents.data.agents.some((row) => row.slug === 'browser-agent'), true);
 
         const addAgent = await requestJson({
           port: server.port,

@@ -500,9 +500,7 @@ function resolveParserApiKey(provider, cfg = {}) {
 
 function ensureParserApiKey(cfg = {}) {
   const provider = resolveParserProvider(cfg);
-  if (provider === 'ollama') {
-    throw new Error('Provider "ollama" is disabled. Configure a cloud provider with a valid API key.');
-  }
+  if (provider === 'ollama') return { provider, apiKey: '' };
   const apiKey = resolveParserApiKey(provider, cfg);
   if (!hasProviderCredential(provider, apiKey) || !String(apiKey || '').trim()) {
     throw new Error(`Missing AI API key for provider "${provider}". Configure Settings -> API Keys or run: social agent setup --provider ${provider} --api-key <key>`);

@@ -7,6 +7,7 @@ const MetaAPIClient = require('../api-client');
 const { sanitizeForLog } = require('../api');
 const { normalizeAct, paginate, summarizeInsights } = require('../marketing');
 const hubStorage = require('../hub/storage');
+const appPaths = require('../app-paths');
 const { getIntentById, listIntents, disambiguationQuestions } = require('./contract');
 
 function parseHeaderJson(value) {
@@ -89,9 +90,7 @@ function withRuntimeMetadata(started, counters, cost, runtimeLogs) {
 }
 
 function getHomeRoot() {
-  if (process.env.SOCIAL_CLI_HOME) return path.resolve(process.env.SOCIAL_CLI_HOME);
-  if (process.env.META_CLI_HOME) return path.resolve(process.env.META_CLI_HOME);
-  return os.homedir();
+  return appPaths.migrateLegacyAppHome();
 }
 
 function ensureDir(dirPath) {
@@ -107,7 +106,7 @@ function stableStringify(value) {
 }
 
 function idempotencyStorePath() {
-  const root = path.join(getHomeRoot(), '.meta-cli', 'runtime');
+  const root = path.join(getHomeRoot(), 'runtime');
   ensureDir(root);
   return path.join(root, 'idempotency.json');
 }

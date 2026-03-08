@@ -21,4 +21,4 @@ services:
       SOCIAL_HOSTED_TRIGGERS_DIR: "/data/triggers"
     volumes:
       - ./data:/data
-      - ./runtime-home:/root/.social-cli
+      - ./runtime-home:/root/.social-flow

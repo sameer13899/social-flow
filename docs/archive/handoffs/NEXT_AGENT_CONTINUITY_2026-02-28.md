@@ -2,7 +2,7 @@
 
 ## Objective
 
-Stabilize Railway deployment for `socialclaw-core` and align gateway/frontend operation with the new agentic tool-calling model (no bundled Studio frontend in gateway).
+Stabilize Railway deployment for `socialclaw-core` and align gateway/frontend operation with the new agentic tool-calling model (Studio served through the app route in gateway).
 
 ## Current Local Code State
 
@@ -83,4 +83,3 @@ Note:
 - `npx --yes @railway/cli up --detach`
 - `npx --yes @railway/cli deployment list --json`
 - `npx --yes @railway/cli status --json`
-
