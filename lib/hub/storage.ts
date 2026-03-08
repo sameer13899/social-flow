@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const axios = require('axios');
+const appPaths = require('../app-paths');
 const { cloneBuiltinCatalog } = require('./catalog');
 
 const TRUST_POLICY_DEFAULT = {
@@ -21,19 +22,18 @@ function ensureDir(dirPath) {
 }
 
 function homeRoot() {
-  if (process.env.SOCIAL_CLI_HOME) return path.resolve(process.env.SOCIAL_CLI_HOME);
-  if (process.env.META_CLI_HOME) return path.resolve(process.env.META_CLI_HOME);
-  return os.homedir();
+  return appPaths.migrateLegacyAppHome(process.env, os.homedir());
 }
 
 function hubRoot() {
   const home = homeRoot();
   if (cachedHubRoot && cachedHubHome === home) return cachedHubRoot;
-  const candidates = [
-    path.join(home, '.social-cli', 'hub'),
-    path.join(home, '.meta-cli', 'hub'),
+  const candidates = appPaths.uniquePaths([
+    path.join(home, 'hub'),
+    ...appPaths.candidatePaths(['hub']).slice(1),
+    path.join(process.cwd(), '.social-flow-hub'),
     path.join(process.cwd(), '.social-cli-hub')
-  ];
+  ]);
 
   for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];

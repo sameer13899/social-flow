@@ -64,6 +64,7 @@ function resolveRuntimeDir() {
   const candidates = [
     path.join(preferredBase, 'runtime'),
     path.join(process.cwd(), '.social-runtime'),
+    path.join(os.tmpdir(), 'social-flow-runtime'),
     path.join(os.tmpdir(), 'social-cli-runtime')
   ];
   for (const dir of candidates) {

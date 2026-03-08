@@ -18,6 +18,7 @@ const opsRbac = require('../ops/rbac');
 const { buildReadinessReport } = require('../readiness');
 const { HostedPlatform } = require('../hosted/platform');
 const hostedStorage = require('../hosted/storage');
+const appPaths = require('../app-paths');
 
 const GUARD_MODES = new Set(['observe', 'approval', 'auto_safe']);
 const SOURCE_CONNECTORS = new Set(
@@ -954,11 +955,13 @@ function isPathInsideRoot(root, target) {
 }
 
 function gatewayRoots() {
-  const roots = [
+  const roots = appPaths.uniquePaths([
     path.resolve(process.cwd()),
+    appPaths.resolveAppHome(process.env),
+    process.env.SOCIAL_FLOW_HOME ? path.resolve(process.env.SOCIAL_FLOW_HOME) : '',
     process.env.SOCIAL_CLI_HOME ? path.resolve(process.env.SOCIAL_CLI_HOME) : '',
     process.env.META_CLI_HOME ? path.resolve(process.env.META_CLI_HOME) : ''
-  ].filter(Boolean);
+  ].filter(Boolean));
   return [...new Set(roots.map((x) => normalizeFsPathForCompare(x)))];
 }
 

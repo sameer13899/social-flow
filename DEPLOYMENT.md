@@ -48,10 +48,10 @@ Social Flow stores state on disk. Back this up.
 
 Default locations:
 
-- config: `~/.social-cli/config.json`
-- chat sessions: `~/.social-cli/chat/`
-- hosted data: `~/.social-cli/hosted/`
-- ops workspace state: `~/.social-cli/ops/`
+- config: `~/.social-flow/config.json`
+- chat sessions: `~/.social-flow/chat/`
+- hosted data: `~/.social-flow/hosted/`
+- ops workspace state: `~/.social-flow/ops/`
 
 Hosted/channel subdirectories may include:
 
@@ -63,6 +63,7 @@ Hosted/channel subdirectories may include:
 
 Overrideable roots:
 
+- `SOCIAL_FLOW_HOME`
 - `SOCIAL_CLI_HOME`
 - `META_CLI_HOME` (backward compatibility)
 - `SOCIAL_HOSTED_HOME`
@@ -176,7 +177,7 @@ After every upgrade:
 
 Back up both:
 
-- `~/.social-cli/`
+- `~/.social-flow/`
 - your explicit hosted storage directories if overridden by env vars
 
 Minimum backup set:

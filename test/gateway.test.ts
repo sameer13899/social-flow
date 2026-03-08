@@ -477,7 +477,7 @@ module.exports = [
         assert.equal(res.data.system.security.corsRestricted, true);
         assert.equal(res.data.system.setup.studioFrontendInstalled, true);
         assert.equal(Array.isArray(res.data.system.paths), true);
-        assert.equal(res.data.system.paths.some((row) => row.key === 'configFile' && String(row.path || '').includes('.social-cli')), true);
+        assert.equal(res.data.system.paths.some((row) => row.key === 'configFile' && String(row.path || '').includes('.social-flow')), true);
         assert.equal(Array.isArray(res.data.system.checks), true);
         assert.equal(res.data.system.checks.some((row) => row.key === 'gateway_access'), true);
         assert.equal(typeof res.data.system.commands.upgrade, 'string');

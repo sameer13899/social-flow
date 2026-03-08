@@ -42,6 +42,8 @@ social hatch --ai-provider ollama
 
 This uses a local Ollama server by default at `http://127.0.0.1:11434` and does not require an API key.
 
+Local state now lives under `~/.social-flow/`. Existing `~/.social-cli/` state is read and migrated automatically.
+
 Optional Studio UI:
 
 ```bash

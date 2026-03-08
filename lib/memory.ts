@@ -1,6 +1,6 @@
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const appPaths = require('./app-paths');
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
@@ -35,18 +35,12 @@ function writeJsonAtomic(filePath, data) {
   writeTextAtomic(filePath, JSON.stringify(data, null, 2));
 }
 
-function getHomeRoot() {
-  if (process.env.SOCIAL_CLI_HOME) return path.resolve(process.env.SOCIAL_CLI_HOME);
-  if (process.env.META_CLI_HOME) return path.resolve(process.env.META_CLI_HOME);
-  return os.homedir();
-}
-
 function contextRoot() {
-  return path.join(getHomeRoot(), '.social-cli', 'context');
+  return path.join(appPaths.migrateLegacyAppHome(), 'context');
 }
 
-function legacyContextRoot() {
-  return path.join(getHomeRoot(), '.meta-cli', 'context');
+function legacyContextRoots() {
+  return appPaths.candidatePaths(['context']).filter((candidate) => candidate !== contextRoot());
 }
 
 function sanitizeScope(scope) {
@@ -61,7 +55,8 @@ function scopeDir(scope) {
 }
 
 function legacyScopeDir(scope) {
-  return path.join(legacyContextRoot(), sanitizeScope(scope));
+  const roots = legacyContextRoots();
+  return roots.length ? path.join(roots[0], sanitizeScope(scope)) : '';
 }
 
 function scopeMemoryPath(scope) {
@@ -69,7 +64,8 @@ function scopeMemoryPath(scope) {
 }
 
 function legacyScopeMemoryPath(scope) {
-  return path.join(legacyScopeDir(scope), 'memory.json');
+  const dir = legacyScopeDir(scope);
+  return dir ? path.join(dir, 'memory.json') : '';
 }
 
 function scopeSummaryPath(scope) {
@@ -77,7 +73,8 @@ function scopeSummaryPath(scope) {
 }
 
 function legacyScopeSummaryPath(scope) {
-  return path.join(legacyScopeDir(scope), 'summary.md');
+  const dir = legacyScopeDir(scope);
+  return dir ? path.join(dir, 'summary.md') : '';
 }
 
 function detectScopeCandidates(intent, appId) {
@@ -109,7 +106,7 @@ function detectScopeCandidates(intent, appId) {
 
 function listScopes() {
   const names = new Set();
-  [contextRoot(), legacyContextRoot()].forEach((root) => {
+  [contextRoot(), ...legacyContextRoots()].forEach((root) => {
     if (!fs.existsSync(root)) return;
     try {
       fs.readdirSync(root, { withFileTypes: true })
@@ -123,16 +120,27 @@ function listScopes() {
 }
 
 function loadScopeSummary(scope) {
-  const next = readText(scopeSummaryPath(scope));
-  if (next) return next;
-  return readText(legacyScopeSummaryPath(scope));
+  const candidates = [
+    scopeSummaryPath(scope),
+    ...legacyContextRoots().map((root) => path.join(root, sanitizeScope(scope), 'summary.md'))
+  ];
+  for (let i = 0; i < candidates.length; i += 1) {
+    const next = readText(candidates[i]);
+    if (next) return next;
+  }
+  return '';
 }
 
 function loadScopeMemory(scope) {
-  let mem = readJson(scopeMemoryPath(scope));
-  if (!Array.isArray(mem)) mem = readJson(legacyScopeMemoryPath(scope));
-  if (!Array.isArray(mem)) return [];
-  return mem;
+  const candidates = [
+    scopeMemoryPath(scope),
+    ...legacyContextRoots().map((root) => path.join(root, sanitizeScope(scope), 'memory.json'))
+  ];
+  for (let i = 0; i < candidates.length; i += 1) {
+    const mem = readJson(candidates[i]);
+    if (Array.isArray(mem)) return mem;
+  }
+  return [];
 }
 
 function redactSecretsDeep(value) {
@@ -227,14 +235,14 @@ async function appendScopeMemory(scope, entry) {
 }
 
 async function forgetScope(scope) {
-  [scopeDir(scope), legacyScopeDir(scope)].forEach((dir) => {
+  [scopeDir(scope), ...legacyContextRoots().map((root) => path.join(root, sanitizeScope(scope)))].forEach((dir) => {
     if (!fs.existsSync(dir)) return;
     fs.rmSync(dir, { recursive: true, force: true });
   });
 }
 
 async function clearAllScopes() {
-  [contextRoot(), legacyContextRoot()].forEach((root) => {
+  [contextRoot(), ...legacyContextRoots()].forEach((root) => {
     if (!fs.existsSync(root)) return;
     fs.rmSync(root, { recursive: true, force: true });
   });

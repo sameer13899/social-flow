@@ -8,7 +8,7 @@ Use `docs/HATCH_UI.md` as the primary conversational runtime guide.
 
 ## Overview
 
-`social chat` adds a persistent multi-turn conversation loop to `social-cli`.
+`social chat` adds a persistent multi-turn conversation loop to Social Flow.
 
 Core flow:
 
@@ -32,7 +32,7 @@ Core flow:
 
 Session files are stored at:
 
-- `~/.social-cli/chat/sessions/<session-id>.json`
+- `~/.social-flow/chat/sessions/<session-id>.json`
 
 Features:
 

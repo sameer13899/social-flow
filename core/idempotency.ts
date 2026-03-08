@@ -5,7 +5,12 @@ import path from "node:path";
 
 import type { Intent } from "./types.js";
 
-const STORE_FILE = path.join(os.homedir(), ".social-cli", "idempotency.json");
+function storeFilePath(): string {
+  if (process.env.SOCIAL_FLOW_HOME) return path.join(path.resolve(process.env.SOCIAL_FLOW_HOME), "idempotency.json");
+  if (process.env.SOCIAL_CLI_HOME) return path.join(path.resolve(process.env.SOCIAL_CLI_HOME), ".social-flow", "idempotency.json");
+  if (process.env.META_CLI_HOME) return path.join(path.resolve(process.env.META_CLI_HOME), ".social-flow", "idempotency.json");
+  return path.join(os.homedir(), ".social-flow", "idempotency.json");
+}
 
 type IdempotencyStore = Record<string, string>;
 
@@ -19,7 +24,7 @@ function buildPayload(intent: Intent): string {
 
 async function readStore(): Promise<IdempotencyStore> {
   try {
-    const raw = await fs.readFile(STORE_FILE, "utf8");
+    const raw = await fs.readFile(storeFilePath(), "utf8");
     return JSON.parse(raw) as IdempotencyStore;
   } catch {
     return {};
@@ -27,8 +32,9 @@ async function readStore(): Promise<IdempotencyStore> {
 }
 
 async function writeStore(store: IdempotencyStore): Promise<void> {
-  await fs.mkdir(path.dirname(STORE_FILE), { recursive: true });
-  await fs.writeFile(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
+  const file = storeFilePath();
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify(store, null, 2), "utf8");
 }
 
 export function buildIdempotencyKey(intent: Intent): string {

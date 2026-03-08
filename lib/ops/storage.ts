@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const configSingleton = require('../config');
+const appPaths = require('../app-paths');
 
 const DEFAULT_POLICY = {
   spendThreshold: 200,
@@ -110,9 +111,7 @@ function ensureDir(dirPath) {
 }
 
 function homeRoot() {
-  if (process.env.SOCIAL_CLI_HOME) return path.resolve(process.env.SOCIAL_CLI_HOME);
-  if (process.env.META_CLI_HOME) return path.resolve(process.env.META_CLI_HOME);
-  return os.homedir();
+  return appPaths.migrateLegacyAppHome(process.env, os.homedir());
 }
 
 function sanitizeWorkspace(name) {
@@ -127,11 +126,12 @@ function sanitizeWorkspace(name) {
 function opsRoot() {
   const home = homeRoot();
   if (cachedOpsRoot && cachedOpsHome === home) return cachedOpsRoot;
-  const candidates = [
-    path.join(home, '.social-cli', 'ops'),
-    path.join(home, '.meta-cli', 'ops'),
+  const candidates = appPaths.uniquePaths([
+    path.join(home, 'ops'),
+    ...appPaths.candidatePaths(['ops']).slice(1),
+    path.join(process.cwd(), '.social-flow-ops'),
     path.join(process.cwd(), '.social-cli-ops')
-  ];
+  ]);
 
   // Pick first writable location.
   for (let i = 0; i < candidates.length; i += 1) {

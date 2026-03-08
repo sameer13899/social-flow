@@ -3,6 +3,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const inquirer = require('inquirer');
 const chalk = require('chalk');
+const appPaths = require('../lib/app-paths');
 
 const PACKAGE_NAME = '@vishalgojha/social-flow';
 
@@ -24,8 +25,7 @@ function uninstallCommandText(platform: string = process.platform, packageName: 
 }
 
 function socialDataDir(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()) {
-  const homeRoot = String(env.SOCIAL_CLI_HOME || env.META_CLI_HOME || homeDir || '').trim() || homeDir;
-  return path.join(homeRoot, '.social-cli');
+  return appPaths.resolveAppHome(env, homeDir);
 }
 
 function runUninstall(command: string, args: string[]) {

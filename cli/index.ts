@@ -31,7 +31,7 @@ program
 
 program
   .command("onboard")
-  .description("Initialize ~/.social-cli/config.json")
+  .description("Initialize ~/.social-flow/config.json")
   .action(async () => {
     const cfg = await readConfig();
     cfg.token = await prompt("Meta token: ");

@@ -39,16 +39,68 @@ type HatchMemoryIndex = {
   lastByProfile: Record<string, { sessionId: string; updatedAt: string }>;
 };
 
-function socialCliHomeRoot(): string {
-  return process.env.SOCIAL_CLI_HOME ? path.resolve(process.env.SOCIAL_CLI_HOME) : os.homedir();
+function explicitAppHome(): string {
+  return process.env.SOCIAL_FLOW_HOME ? path.resolve(process.env.SOCIAL_FLOW_HOME) : "";
 }
 
-function socialCliDir(): string {
-  return path.join(socialCliHomeRoot(), ".social-cli");
+function legacyHomeRoot(): string {
+  if (process.env.SOCIAL_CLI_HOME) return path.resolve(process.env.SOCIAL_CLI_HOME);
+  if (process.env.META_CLI_HOME) return path.resolve(process.env.META_CLI_HOME);
+  return os.homedir();
+}
+
+function socialFlowDir(): string {
+  const explicit = explicitAppHome();
+  if (explicit) return explicit;
+  return path.join(legacyHomeRoot(), ".social-flow");
+}
+
+function legacyAppDirs(): string[] {
+  const current = socialFlowDir();
+  const parent = path.dirname(current);
+  const out = [
+    path.join(parent, ".social-cli"),
+    path.join(parent, ".meta-cli")
+  ];
+  const seen = new Set<string>();
+  return out.filter((item) => {
+    const key = process.platform === "win32" ? item.toLowerCase() : item;
+    if (item === current || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function ensureMigratedAppHome(): Promise<void> {
+  const current = socialFlowDir();
+  if (await exists(current)) return;
+  for (const legacy of legacyAppDirs()) {
+    if (!(await exists(legacy))) continue;
+    try {
+      await mkdir(path.dirname(current), { recursive: true });
+      await rename(legacy, current);
+      return;
+    } catch {
+      // Legacy reads still work even if rename fails.
+    }
+  }
+}
+
+function socialFlowConfigCandidates(): string[] {
+  const current = path.join(socialFlowDir(), "config.json");
+  const out = [current];
+  for (const legacy of legacyAppDirs()) {
+    out.push(path.join(legacy, "config.json"));
+  }
+  return out;
+}
+
+function socialFlowDirLegacyAware(): string {
+  return socialFlowDir();
 }
 
 function hatchRootDir(): string {
-  return path.join(socialCliDir(), "hatch");
+  return path.join(socialFlowDirLegacyAware(), "hatch");
 }
 
 function hatchLegacyMemoryFile(): string {
@@ -322,8 +374,16 @@ async function resolveLogDir(): Promise<string> {
 }
 
 export async function loadConfigSnapshot(): Promise<ConfigSnapshot> {
-  const cfgPath = path.join(socialCliDir(), "config.json");
-  const raw = await readFile(cfgPath, "utf8");
+  await ensureMigratedAppHome();
+  let raw = "";
+  for (const candidate of socialFlowConfigCandidates()) {
+    if (!(await exists(candidate))) continue;
+    raw = await readFile(candidate, "utf8");
+    if (raw) break;
+  }
+  if (!raw) {
+    throw new Error(`Config file not found under ${socialFlowDir()}`);
+  }
   const parsed = JSON.parse(raw) as {
     activeProfile?: string;
     profiles?: Record<string, {
@@ -461,6 +521,7 @@ function normalizeTurn(value: unknown): ChatTurn | null {
 }
 
 export async function loadHatchMemory(scope: HatchMemoryScope = {}): Promise<HatchMemorySnapshot | null> {
+  await ensureMigratedAppHome();
   const profileId = await resolveProfileId(scope.profileId);
   let index = await readHatchIndex();
   index = await migrateLegacyMemoryIfNeeded(profileId, index);
@@ -499,6 +560,7 @@ export async function saveHatchMemory(
   snapshot: Omit<HatchMemorySnapshot, "updatedAt">,
   scope: HatchMemoryScope = {}
 ): Promise<void> {
+  await ensureMigratedAppHome();
   const profileId = await resolveProfileId(scope.profileId);
   const sessionId = normalizeSessionId(String(scope.sessionId || snapshot.sessionId || "hatch_default"));
   const updatedAt = new Date().toISOString();

@@ -129,7 +129,7 @@ For medium/high-risk actions:
 
 Sessions are persisted through the chat memory layer:
 
-- storage path: `~/.social-cli/chat/sessions/*.json`
+- storage path: `~/.social-flow/chat/sessions/*.json`
 - resumed automatically when a known `sessionId` is provided
 
 ## Safety

@@ -49,7 +49,7 @@ async function maybePromptForApiKey(provider) {
       type: 'confirm',
       name: 'save',
       default: false,
-      message: 'Save this key in ~/.social-cli/config.json? (not recommended for shared machines)'
+      message: 'Save this key in ~/.social-flow/config.json? (not recommended for shared machines)'
     }
   ]);
 

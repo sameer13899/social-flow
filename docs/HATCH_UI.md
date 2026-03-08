@@ -48,9 +48,9 @@ Confidence threshold is controlled by:
 
 Hatch saves memory under:
 
-- `~/.social-cli/hatch/sessions/<sessionId>.json`
-- `~/.social-cli/hatch/profiles/<profileId>.json`
-- `~/.social-cli/hatch/index.json`
+- `~/.social-flow/hatch/sessions/<sessionId>.json`
+- `~/.social-flow/hatch/profiles/<profileId>.json`
+- `~/.social-flow/hatch/index.json`
 
 Legacy single-file memory (`~/.social-cli/hatch/memory.json`) is auto-migrated on load.
 

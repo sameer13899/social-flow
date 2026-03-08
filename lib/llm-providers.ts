@@ -125,7 +125,7 @@ async function chatComplete({
       'Content-Type': 'application/json'
     };
     const referer = process.env.SOCIAL_OPENROUTER_SITE_URL || process.env.OPENROUTER_SITE_URL || '';
-    const title = process.env.SOCIAL_OPENROUTER_APP_NAME || process.env.OPENROUTER_APP_NAME || 'social-cli';
+    const title = process.env.SOCIAL_OPENROUTER_APP_NAME || process.env.OPENROUTER_APP_NAME || 'social-flow';
     if (referer) headers['HTTP-Referer'] = referer;
     if (title) headers['X-Title'] = title;
 

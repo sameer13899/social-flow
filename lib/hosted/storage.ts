@@ -1,7 +1,7 @@
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { createHash } = require('crypto');
+const appPaths = require('../app-paths');
 
 function ensureDir(dirPath) {
   const resolved = path.resolve(String(dirPath || ''));
@@ -17,16 +17,26 @@ function sleep(ms) {
 }
 
 function homeRoot() {
-  if (process.env.SOCIAL_CLI_HOME) return path.resolve(process.env.SOCIAL_CLI_HOME);
-  if (process.env.META_CLI_HOME) return path.resolve(process.env.META_CLI_HOME);
-  return os.homedir();
+  return appPaths.migrateLegacyAppHome();
 }
 
 function hostedRoot() {
   if (process.env.SOCIAL_HOSTED_HOME) {
     return ensureDir(path.resolve(process.env.SOCIAL_HOSTED_HOME));
   }
-  return ensureDir(path.join(homeRoot(), '.social-cli', 'hosted'));
+  const current = path.join(homeRoot(), 'hosted');
+  if (fs.existsSync(current)) return ensureDir(current);
+  const legacy = appPaths.candidatePaths(['hosted']).slice(1).find((candidate) => fs.existsSync(candidate));
+  if (legacy) {
+    try {
+      ensureDir(path.dirname(current));
+      fs.renameSync(legacy, current);
+      return ensureDir(current);
+    } catch {
+      return ensureDir(legacy);
+    }
+  }
+  return ensureDir(current);
 }
 
 function hasWriteAccess(dirPath) {

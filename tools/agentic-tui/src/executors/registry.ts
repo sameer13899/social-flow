@@ -462,7 +462,7 @@ const executors: Record<ParsedIntent["action"], RegisteredExecutor> = {
           }
         },
         rollback: {
-          note: "Restore previous ~/.social-cli/config.json snapshot (manual rollback).",
+          note: "Restore previous ~/.social-flow/config.json snapshot (manual rollback).",
           status: "STUB"
         }
       };

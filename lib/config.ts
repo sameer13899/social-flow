@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const chalk = require('chalk');
+const appPaths = require('./app-paths');
 const { renderPanel, formatBadge, kv, formatTokenPreview } = require('./ui/chrome');
 
 function ensureDir(dirPath) {
@@ -96,15 +97,14 @@ function sanitizeAdAccountId(value) {
 class ConfigManager {
   constructor() {
     // Allow overriding config location for CI/tests or portable setups.
-    // SOCIAL_CLI_HOME is preferred; META_CLI_HOME is kept for backward compatibility.
-    // Config lives at: <HOME>/.social-cli/config.json
-    const homeRoot = process.env.SOCIAL_CLI_HOME
-      ? path.resolve(process.env.SOCIAL_CLI_HOME)
-      : (process.env.META_CLI_HOME ? path.resolve(process.env.META_CLI_HOME) : os.homedir());
-    this.homeRoot = homeRoot;
-    this.dir = path.join(homeRoot, '.social-cli');
+    // SOCIAL_FLOW_HOME points to the app state directory directly.
+    // SOCIAL_CLI_HOME and META_CLI_HOME remain supported as legacy home-root overrides.
+    this.homeRoot = appPaths.legacyHomeRoot(process.env, os.homedir());
+    this.dir = appPaths.ensureAppHome(process.env, os.homedir());
     this.file = path.join(this.dir, 'config.json');
-    this.legacyFile = path.join(homeRoot, '.meta-cli', 'config.json');
+    this.legacyFiles = appPaths
+      .candidatePaths(['config.json'], process.env, os.homedir())
+      .filter((candidate) => candidate !== this.file);
     this.data = null;
     this._activeProfileOverride = '';
     this._load();
@@ -221,17 +221,29 @@ class ConfigManager {
     try {
       ensureDir(this.dir);
     } catch {
-      // Fallback for restricted environments where creating ~/.social-cli is denied.
-      this.dir = path.join(this.homeRoot, '.meta-cli');
+      // Fall back to the first writable legacy app directory only if the new path is denied.
+      const fallbackDir = appPaths
+        .legacyAppHomes(process.env, os.homedir())
+        .find((candidate) => {
+          try {
+            ensureDir(candidate);
+            return true;
+          } catch {
+            return false;
+          }
+        });
+      if (fallbackDir) this.dir = fallbackDir;
       this.file = path.join(this.dir, 'config.json');
+      this.legacyFiles = (this.legacyFiles || []).filter((candidate) => candidate !== this.file);
       ensureDir(this.dir);
     }
     let existing = readJson(this.file);
     if (!existing) {
-      existing = readJson(this.legacyFile);
-      if (existing) {
-        writeJsonAtomic(this.file, existing);
-      }
+      this.legacyFiles.some((candidate) => {
+        existing = readJson(candidate);
+        return Boolean(existing);
+      });
+      if (existing) writeJsonAtomic(this.file, existing);
     }
 
     if (!existing) {
