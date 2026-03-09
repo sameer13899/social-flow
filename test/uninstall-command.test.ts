@@ -25,19 +25,21 @@ module.exports = [
   {
     name: 'uninstall command resolves data dir from SOCIAL_FLOW_HOME',
     fn: () => {
+      const explicitHome = path.join('/tmp', 'social-home', '.social-flow');
       const out = uninstall._private.socialDataDir({
-        SOCIAL_FLOW_HOME: 'C:\\temp\\social-home\\.social-flow'
-      }, 'C:\\Users\\example');
-      assert.equal(out, 'C:\\temp\\social-home\\.social-flow');
+        SOCIAL_FLOW_HOME: explicitHome
+      }, path.join('/tmp', 'social-user'));
+      assert.equal(out, path.resolve(explicitHome));
     }
   },
   {
     name: 'uninstall command resolves data dir from SOCIAL_CLI_HOME',
     fn: () => {
+      const legacyHome = path.join('/tmp', 'social-home');
       const out = uninstall._private.socialDataDir({
-        SOCIAL_CLI_HOME: 'C:\\temp\\social-home'
-      }, 'C:\\Users\\example');
-      assert.equal(out, 'C:\\temp\\social-home\\.social-flow');
+        SOCIAL_CLI_HOME: legacyHome
+      }, path.join('/tmp', 'social-user'));
+      assert.equal(out, path.join(path.resolve(legacyHome), '.social-flow'));
     }
   },
   {
