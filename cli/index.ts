@@ -1,9 +1,8 @@
 import { Command } from "commander";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { spawn } from "node:child_process";
 
 import { configPath, readConfig, writeConfig } from "../core/config.js";
 import { parseIntentWithAi } from "../core/ai/intent-from-ai.js";
@@ -109,34 +108,6 @@ function serializeBrowserRuntime(
   };
 }
 
-function resolveTuiBinary(): string | null {
-  const repoRoot = path.resolve(__dirname, "..");
-  const envBin = process.env.SOCIAL_TUI_BIN;
-  const localExe = path.join(repoRoot, "social-tui", process.platform === "win32" ? "social-tui.exe" : "social-tui");
-  const candidates = [envBin, localExe, "social-tui"].filter((x): x is string => Boolean(x));
-  const selected = candidates.find((candidate) => {
-    if (candidate.includes(path.sep)) {
-      return existsSync(candidate);
-    }
-    return true;
-  });
-  return selected || null;
-}
-
-function runTuiOrWarn(): void {
-  const selected = resolveTuiBinary();
-  if (!selected) {
-    // eslint-disable-next-line no-console
-    console.error("social-tui binary not found. Build it at social-tui/ or set SOCIAL_TUI_BIN.");
-    return;
-  }
-  const child = spawn(selected, [], {
-    stdio: "inherit",
-    env: process.env
-  });
-  child.on("exit", (code) => process.exit(code === null ? 1 : code));
-}
-
 const program = new Command();
 
 program
@@ -149,7 +120,7 @@ program
   .alias("setup")
   .description("Initialize ~/.social-flow/config.json and browser runtime")
   .option("--skip-browser", "skip automatic Chromium provisioning", false)
-  .option("--no-tui", "do not launch the Go TUI after setup", false)
+  .option("--no-tui", "deprecated (no-op)", false)
   .action(async (opts: { skipBrowser?: boolean; tui?: boolean }) => {
     const cfg = await readConfig();
     const defaultApi = normalizeDefaultApi(
@@ -194,9 +165,6 @@ program
       path: await configPath(),
       browser_runtime: browserRuntime
     });
-    if (process.stdout.isTTY && opts.tui !== false) {
-      runTuiOrWarn();
-    }
   });
 
 program
@@ -256,9 +224,11 @@ program
 
 program
   .command("tui")
-  .description("Launch the Go TUI dashboard")
+  .description("Deprecated: Go TUI removed. Use `social hatch` instead.")
   .action(async () => {
-    runTuiOrWarn();
+    // eslint-disable-next-line no-console
+    console.error("Go TUI has been removed. Use `social hatch` to launch the Hatch UI.");
+    process.exit(1);
   });
 
 const profile = program.command("profile").description("Profile commands");

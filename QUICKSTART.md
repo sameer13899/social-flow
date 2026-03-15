@@ -11,7 +11,6 @@ npm install -g @vishalgojha/social-flow
 # 2) Configure token + defaults
 social onboard
 # also provisions Chromium for browser automation unless you pass --skip-browser
-# launches the Go TUI after setup (disable with --no-tui)
 
 # 3) Validate setup
 social doctor
@@ -21,23 +20,17 @@ social status
 ## First Commands
 
 ```bash
-social tui
+social hatch
 social profile get --fields id,name
 social post create --message "Hello team" --page-id PAGE_ID
 social ads list --account act_123
 social ai --provider deterministic "list ads account act_123"
 ```
 
-## Go TUI
+## Hatch UI
 
 ```bash
-social tui
-```
-
-If the Go binary is not on PATH, set:
-
-```bash
-SOCIAL_TUI_BIN=/path/to/social-tui
+social hatch
 ```
 
 Onboarding notes:
