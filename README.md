@@ -17,6 +17,7 @@ npm install -g @vishalgojha/social-flow
 # 2) Set token, defaults, and AI provider
 social onboard
 # also provisions Chromium for browser automation unless you pass --skip-browser
+# launches the Go TUI after setup (disable with --no-tui)
 
 # 3) Verify local readiness
 social doctor
@@ -37,6 +38,7 @@ social ai --provider ollama "get my facebook profile"
 
 ```bash
 social onboard
+social tui
 social doctor
 social status
 social config
@@ -46,6 +48,20 @@ social ads list --account act_123
 social logs
 social replay <LOG_ID>
 social ai --provider deterministic "create post \"Hello\" page 12345"
+```
+
+## Go TUI
+
+The Go TUI launches with:
+
+```bash
+social tui
+```
+
+If the Go binary is not on PATH, set:
+
+```bash
+SOCIAL_TUI_BIN=/path/to/social-tui
 ```
 
 ## Config Compatibility
