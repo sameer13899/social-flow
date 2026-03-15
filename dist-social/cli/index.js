@@ -111,7 +111,6 @@ program
     .alias("setup")
     .description("Initialize ~/.social-flow/config.json and browser runtime")
     .option("--skip-browser", "skip automatic Chromium provisioning", false)
-    .option("--no-tui", "deprecated (no-op)", false)
     .action(async (opts) => {
     const cfg = await (0, config_js_1.readConfig)();
     const defaultApi = normalizeDefaultApi((await prompt(`Default API [${cfg.defaultApi || "facebook"}]: `)) || cfg.defaultApi || "facebook");

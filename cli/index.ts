@@ -120,7 +120,6 @@ program
   .alias("setup")
   .description("Initialize ~/.social-flow/config.json and browser runtime")
   .option("--skip-browser", "skip automatic Chromium provisioning", false)
-  .option("--no-tui", "deprecated (no-op)", false)
   .action(async (opts: { skipBrowser?: boolean; tui?: boolean }) => {
     const cfg = await readConfig();
     const defaultApi = normalizeDefaultApi(
