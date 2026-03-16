@@ -46,7 +46,20 @@ social ads list --account act_123
 social logs
 social replay <LOG_ID>
 social ai --provider deterministic "create post \"Hello\" page 12345"
+social hatch
 ```
+
+## Hatch UI
+
+Launch the agentic terminal UI with:
+
+```bash
+social hatch
+```
+
+Onboarding notes:
+- Facebook/Instagram: opens Graph Explorer to generate a token.
+- WhatsApp: opens Meta App Dashboard (WhatsApp API Setup) for token generation.
 
 ## Config Compatibility
 

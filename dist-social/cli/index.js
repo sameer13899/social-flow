@@ -207,6 +207,14 @@ program
     const cfg = await (0, config_js_1.readConfig)();
     printJson(cfg);
 });
+program
+    .command("tui")
+    .description("Deprecated: Go TUI removed. Use `social hatch` instead.")
+    .action(async () => {
+    // eslint-disable-next-line no-console
+    console.error("Go TUI has been removed. Use `social hatch` to launch the Hatch UI.");
+    process.exit(1);
+});
 const profile = program.command("profile").description("Profile commands");
 profile
     .command("get")

@@ -120,7 +120,7 @@ program
   .alias("setup")
   .description("Initialize ~/.social-flow/config.json and browser runtime")
   .option("--skip-browser", "skip automatic Chromium provisioning", false)
-  .action(async (opts: { skipBrowser?: boolean }) => {
+  .action(async (opts: { skipBrowser?: boolean; tui?: boolean }) => {
     const cfg = await readConfig();
     const defaultApi = normalizeDefaultApi(
       (await prompt(`Default API [${cfg.defaultApi || "facebook"}]: `)) || cfg.defaultApi || "facebook"
@@ -219,6 +219,15 @@ program
   .action(async () => {
     const cfg = await readConfig();
     printJson(cfg);
+  });
+
+program
+  .command("tui")
+  .description("Deprecated: Go TUI removed. Use `social hatch` instead.")
+  .action(async () => {
+    // eslint-disable-next-line no-console
+    console.error("Go TUI has been removed. Use `social hatch` to launch the Hatch UI.");
+    process.exit(1);
   });
 
 const profile = program.command("profile").description("Profile commands");
