@@ -1352,6 +1352,38 @@ function HatchRuntime(): JSX.Element {
   };
 
   const config = configState.data;
+  const waba = config?.waba || {
+    connected: false,
+    businessId: "",
+    wabaId: "",
+    phoneNumberId: "",
+    webhookCallbackUrl: "",
+    webhookVerifyToken: ""
+  };
+  const missingSetup: Array<{ label: string; fix: string }> = [];
+  if (!config?.tokenMap.whatsapp) {
+    missingSetup.push({
+      label: "WhatsApp access token",
+      fix: "social auth login -a whatsapp"
+    });
+  }
+  if (!waba.wabaId) {
+    missingSetup.push({
+      label: "WABA ID",
+      fix: "social integrations connect waba"
+    });
+  }
+  if (!waba.phoneNumberId) {
+    missingSetup.push({
+      label: "WhatsApp phone number ID",
+      fix: "social integrations connect waba"
+    });
+  }
+  const quickActions = [
+    { label: "Connect WhatsApp token", command: "social auth login -a whatsapp" },
+    { label: "Run doctor", command: "social doctor" },
+    { label: "Send test message", command: "social waba send --from PHONE_ID --to +15551234567 --body \"Hello\"" }
+  ];
   const platformStatus = {
     instagram: !!config?.tokenMap.instagram || !!config?.scopes.find((x) => x.includes("instagram")),
     facebook: !!config?.tokenMap.facebook || !!config?.tokenSet,
@@ -1426,6 +1458,33 @@ function HatchRuntime(): JSX.Element {
         {configState.loading ? <Text color={theme.muted}>config loading...</Text> : null}
         {configState.error ? <Text color={theme.error}>config error: {configState.error}</Text> : null}
       </FramedBlock>
+
+      {configState.loading ? null : (
+        <>
+          <SectionHeading label="Onboarding" />
+          <FramedBlock title="Quick actions">
+            {quickActions.map((item) => (
+              <Box key={item.command}>
+                <Text color={theme.text}>{item.label}: </Text>
+                <Text color={theme.accent}>{item.command}</Text>
+              </Box>
+            ))}
+          </FramedBlock>
+          <FramedBlock title="Setup gaps" borderColor={missingSetup.length ? theme.warning : theme.muted}>
+            {missingSetup.length ? (
+              missingSetup.map((item) => (
+                <Box key={item.label}>
+                  <Text color={theme.warning}>missing {item.label}</Text>
+                  <Text color={theme.muted}> | fix: </Text>
+                  <Text color={theme.accent}>{item.fix}</Text>
+                </Box>
+              ))
+            ) : (
+              <Text color={theme.success}>All core setup steps look complete.</Text>
+            )}
+          </FramedBlock>
+        </>
+      )}
 
       <SectionHeading label="Transcript" />
       <Box marginTop={1} flexDirection="column">

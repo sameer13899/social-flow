@@ -393,6 +393,16 @@ export async function loadConfigSnapshot(): Promise<ConfigSnapshot> {
         instagram?: string;
         whatsapp?: string;
       };
+      integrations?: {
+        waba?: {
+          connected?: boolean;
+          businessId?: string;
+          wabaId?: string;
+          phoneNumberId?: string;
+          webhookCallbackUrl?: string;
+          webhookVerifyToken?: string;
+        };
+      };
       defaults?: {
         facebookPageId?: string;
         marketingAdAccountId?: string;
@@ -415,6 +425,16 @@ export async function loadConfigSnapshot(): Promise<ConfigSnapshot> {
       facebook?: string;
       instagram?: string;
       whatsapp?: string;
+    };
+    integrations?: {
+      waba?: {
+        connected?: boolean;
+        businessId?: string;
+        wabaId?: string;
+        phoneNumberId?: string;
+        webhookCallbackUrl?: string;
+        webhookVerifyToken?: string;
+      };
     };
     graphVersion?: string;
     scopes?: string[];
@@ -444,6 +464,16 @@ export async function loadConfigSnapshot(): Promise<ConfigSnapshot> {
 
   const profileIndustry = profileDoc?.industry || parsed?.industry || {};
   const profileDefaults = profileDoc?.defaults || {};
+  const profileIntegrations = profileDoc?.integrations || {};
+  const flatIntegrations = parsed?.integrations || {};
+  const waba = (profileIntegrations.waba || flatIntegrations.waba || {}) as {
+    connected?: boolean;
+    businessId?: string;
+    wabaId?: string;
+    phoneNumberId?: string;
+    webhookCallbackUrl?: string;
+    webhookVerifyToken?: string;
+  };
   const graphVersion = profileDoc?.apiVersion || parsed?.graphVersion || "v20.0";
   const scopes = Array.isArray(profileDoc?.scopes)
     ? profileDoc.scopes.map((x) => String(x))
@@ -465,6 +495,14 @@ export async function loadConfigSnapshot(): Promise<ConfigSnapshot> {
       source: String(profileIndustry.source || ""),
       confidence: Number(profileIndustry.confidence || 0) || 0,
       manualLocked: Boolean(profileIndustry.manualLocked)
+    },
+    waba: {
+      connected: Boolean(waba.connected),
+      businessId: String(waba.businessId || ""),
+      wabaId: String(waba.wabaId || ""),
+      phoneNumberId: String(waba.phoneNumberId || ""),
+      webhookCallbackUrl: String(waba.webhookCallbackUrl || ""),
+      webhookVerifyToken: String(waba.webhookVerifyToken || "")
     }
   };
 }
@@ -586,4 +624,3 @@ export async function saveHatchMemory(
   index.lastByProfile[profileId] = { sessionId, updatedAt };
   await writeHatchIndex(index);
 }
-
