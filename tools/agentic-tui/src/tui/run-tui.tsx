@@ -1367,7 +1367,12 @@ function HatchRuntime(): JSX.Element {
       fix: "social auth login -a whatsapp"
     },
     {
-      label: "WABA ID",
+      label: "WhatsApp Business connected",
+      ok: Boolean(waba.connected),
+      fix: "social integrations connect waba"
+    },
+    {
+      label: "Business account ID (WABA)",
       ok: Boolean(waba.wabaId),
       fix: "social integrations connect waba"
     },
@@ -1382,8 +1387,18 @@ function HatchRuntime(): JSX.Element {
     { label: "Connect WhatsApp token", command: "social auth login -a whatsapp", show: !config?.tokenMap.whatsapp },
     { label: "Connect WABA", command: "social integrations connect waba", show: !waba.wabaId || !waba.phoneNumberId },
     { label: "Run doctor", command: "social doctor", show: true },
-    { label: "Send test message", command: "social waba send --from PHONE_ID --to +15551234567 --body \"Hello\"", show: true }
+    {
+      label: "Send test message",
+      command: "social waba send --from PHONE_ID --to +15551234567 --body \"Hello\"",
+      show: Boolean(waba.phoneNumberId)
+    }
   ].filter((item) => item.show);
+  const nextAction = missingSetup[0]?.fix
+    ? {
+      label: missingSetup[0].label,
+      command: missingSetup[0].fix
+    }
+    : quickActions.find((item) => item.command === "social doctor") || quickActions[0];
   const platformStatus = {
     instagram: !!config?.tokenMap.instagram || !!config?.scopes.find((x) => x.includes("instagram")),
     facebook: !!config?.tokenMap.facebook || !!config?.tokenSet,
@@ -1462,22 +1477,28 @@ function HatchRuntime(): JSX.Element {
       {configState.loading ? null : (
         <>
           <SectionHeading label="Onboarding" />
-          <FramedBlock title="Quick actions">
+          <FramedBlock title="Quick start">
             {quickActions.map((item, idx) => (
               <Box key={item.command}>
-                <Text color={theme.muted}>{`${idx + 1}. `}</Text>
+                <Text color={theme.muted}>{`Step ${idx + 1}: `}</Text>
                 <Text color={theme.text}>{item.label}: </Text>
                 <Text color={theme.accent}>{item.command}</Text>
               </Box>
             ))}
+            {nextAction ? (
+              <Box marginTop={1}>
+                <Text color={theme.text}>Next step: </Text>
+                <Text color={theme.accent}>{nextAction.command}</Text>
+              </Box>
+            ) : null}
             <Text color={theme.muted}>Tip: paste any command above into chat to run it.</Text>
             <Text color={theme.muted}>Tip: type "waba setup" for a guided WhatsApp flow.</Text>
           </FramedBlock>
-          <FramedBlock title="Setup gaps" borderColor={missingSetup.length ? theme.warning : theme.muted}>
+          <FramedBlock title="Setup checklist" borderColor={missingSetup.length ? theme.warning : theme.muted}>
             {setupChecklist.map((item) => (
               <Box key={item.label}>
                 <Text color={item.ok ? theme.success : theme.warning}>
-                  {item.ok ? "OK" : "MISSING"} {item.label}
+                  {item.ok ? "READY" : "NEEDS"} {item.label}
                 </Text>
                 {!item.ok && item.fix ? (
                   <>
@@ -1488,7 +1509,7 @@ function HatchRuntime(): JSX.Element {
               </Box>
             ))}
             {!missingSetup.length ? (
-              <Text color={theme.success}>All core setup steps look complete.</Text>
+              <Text color={theme.success}>Setup complete.</Text>
             ) : null}
           </FramedBlock>
         </>
