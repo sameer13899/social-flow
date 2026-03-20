@@ -396,20 +396,28 @@ function registerAuthCommands(program) {
                 if (api === 'whatsapp') {
                     const appUrl = whatsappTokenHelpUrl(appId);
                     const fallbackUrl = 'https://developers.facebook.com/apps/';
+                    const targetUrl = appUrl || fallbackUrl;
                     console.log(chalk.gray('\nWhatsApp token setup:'));
                     if (canOpen) {
-                        console.log(chalk.gray('Opening Meta App Dashboard...'));
-                        console.log(chalk.cyan(`  ${appUrl || fallbackUrl}\n`));
-                        await openBrowserPage(appUrl || fallbackUrl, {
+                        const session = await ensureBrowserSession();
+                        console.log(chalk.gray('Opening WhatsApp token setup...'));
+                        console.log(chalk.cyan(`  ${targetUrl}\n`));
+                        const opened = await openBrowserPage(targetUrl, {
                             canOpen,
-                            browserSession: await ensureBrowserSession()
+                            browserSession: session
                         });
+                        if (!opened) {
+                            console.log(chalk.yellow('Could not auto-open browser. Open this URL manually:'));
+                            console.log(chalk.cyan(`  ${targetUrl}`));
+                        }
                     }
                     else {
-                        console.log(chalk.gray('Meta App Dashboard URL:'));
-                        console.log(chalk.cyan(`  ${appUrl || fallbackUrl}`));
+                        console.log(chalk.gray('WhatsApp token setup URL:'));
+                        console.log(chalk.cyan(`  ${targetUrl}`));
                     }
                     console.log(chalk.gray('  Steps: Meta App Dashboard -> WhatsApp -> API Setup -> Generate access token.'));
+                    console.log(chalk.gray('  Copy the access token and paste it below.'));
+                    console.log(chalk.gray('  Troubleshooting: if "Generate access token" is missing, ensure WhatsApp is added to your app and you are in the correct app.'));
                     if (!appUrl) {
                         console.log(chalk.gray('  Tip: Configure App ID to jump directly next time (social auth app).\n'));
                     }
@@ -464,7 +472,7 @@ function registerAuthCommands(program) {
                     {
                         type: 'password',
                         name: 'token',
-                        message: `Enter your ${api} access token:`,
+                        message: `Paste your ${api} access token:`,
                         validate: (input) => input.length > 0 || 'Token cannot be empty'
                     }
                 ]);

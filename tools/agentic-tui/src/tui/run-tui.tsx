@@ -85,6 +85,19 @@ function roleGlyph(role: ChatTurn["role"]): string {
   return "sys";
 }
 
+function apiLabel(api: AuthApi): string {
+  if (api === "whatsapp") return "WhatsApp";
+  return `${api.charAt(0).toUpperCase()}${api.slice(1)}`;
+}
+
+function buildTokenPrompt(api: AuthApi, intro?: string): string {
+  const label = apiLabel(api);
+  const prefix = intro ? `${intro} ` : "";
+  const base = `${prefix}Paste your ${label} access token now. I will hide it in chat logs. Type \`cancel\` to stop.`;
+  if (api !== "whatsapp") return base;
+  return `${base} Copy it from Meta App Dashboard -> WhatsApp -> API Setup. Troubleshooting: if "Generate access token" is missing, ensure WhatsApp is added to your app and you are in the correct app.`;
+}
+
 function SectionHeading(props: { label: string }): JSX.Element {
   const theme = useTheme();
   const rule = "─".repeat(Math.max(12, 74 - String(props.label || "").length));
@@ -906,7 +919,7 @@ function HatchRuntime(): JSX.Element {
     if (isWabaSetupRequest) {
       addTurn("user", rewrittenInput);
       setPendingFlow({ kind: "auth_login", stage: "await_token", api: "whatsapp" });
-      await streamAssistantTurn("Let's set up WhatsApp now. Paste your WhatsApp access token and I will hide it in chat logs. Type `cancel` to stop.");
+      await streamAssistantTurn(buildTokenPrompt("whatsapp", "Let's set up WhatsApp now."));
       return;
     }
 
@@ -923,7 +936,7 @@ function HatchRuntime(): JSX.Element {
         return;
       }
       setPendingFlow({ kind: "auth_login", stage: "await_token", api: chosenApi });
-      await streamAssistantTurn(`Paste your ${chosenApi} access token now. I will hide it in chat logs. Type \`cancel\` to stop.`);
+      await streamAssistantTurn(buildTokenPrompt(chosenApi));
       return;
     }
 
@@ -961,7 +974,7 @@ function HatchRuntime(): JSX.Element {
         return;
       }
       setPendingFlow({ kind: "auth_login", stage: "await_token", api: authAssist.api });
-      await streamAssistantTurn(`Paste your ${authAssist.api} access token now. I will hide it in chat logs. Type \`cancel\` to stop.`);
+      await streamAssistantTurn(buildTokenPrompt(authAssist.api));
       return;
     }
 
