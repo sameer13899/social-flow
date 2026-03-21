@@ -155,3 +155,43 @@ Now every time you work with Codex on social-flow:
 ---
 
 **This is the right agents.md for social-flow.** It's tailored to the specific challenges of workflow systems, not CLI tools.
+
+---
+
+## **PRODUCT ROADMAP (DRAFT, CONTEXT-SIZED PHASES)**
+
+### **Phase 1: Token UX Quick Wins (1-2 sessions)**
+1. WhatsApp token hint deep-link + auto-open fallback (already started).
+2. Clear “copy/paste token” CTA copy in CLI + TUI.
+3. Add a short “Troubleshooting: token not found” hint.
+
+### **Phase 2: Onboarding Flow Slice (1-2 sessions)**
+1. Start screen: `Connect WhatsApp`, `Run Doctor`, `Send Test Message`.
+2. Single-screen summary of what’s missing (token, WABA ID, phone ID).
+3. “Fix now” links for each missing item.
+
+### **Phase 3: WABA Doctor Slice (1-2 sessions)**
+1. Make missing scopes/phone ID actionable with precise steps.
+2. Add optional test message prompt.
+3. Tighten error display for Meta API failures.
+
+### **Phase 4: Agentic TUI Core Slice (2-3 sessions)**
+1. Persistent status bar (profile, token, WABA, webhook).
+2. OK/FAIL/SKIP badges everywhere.
+3. “Fix with agent” for at least 1 failure case (token missing).
+
+### **Phase 5: Reliability Slice (1-2 sessions)**
+1. Retry + backoff on transient Meta API failures.
+2. Sandbox vs Production confirmation for send actions.
+3. Token expiry warnings when close to expiration.
+
+### **Phase 6: Scale Slice (2-3 sessions)**
+1. Multi-profile “agency mode” basics (switch + summary).
+2. Minimal readiness dashboard per profile.
+3. Metrics summary (success/fail counts + last error).
+
+### **Definition of Done (Global)**
+1. Each slice ships with tests for happy + expected failure.
+2. Every user-facing error includes exact fix steps.
+3. No token or secret is logged or persisted in plaintext logs.
+4. Docs and CLI help updated for any new flow.

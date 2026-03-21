@@ -85,6 +85,19 @@ function roleGlyph(role: ChatTurn["role"]): string {
   return "sys";
 }
 
+function apiLabel(api: AuthApi): string {
+  if (api === "whatsapp") return "WhatsApp";
+  return `${api.charAt(0).toUpperCase()}${api.slice(1)}`;
+}
+
+function buildTokenPrompt(api: AuthApi, intro?: string): string {
+  const label = apiLabel(api);
+  const prefix = intro ? `${intro} ` : "";
+  const base = `${prefix}Paste your ${label} access token now. I will hide it in chat logs. Type \`cancel\` to stop.`;
+  if (api !== "whatsapp") return base;
+  return `${base} Copy it from Meta App Dashboard -> WhatsApp -> API Setup. Troubleshooting: if "Generate access token" is missing, ensure WhatsApp is added to your app and you are in the correct app.`;
+}
+
 function SectionHeading(props: { label: string }): JSX.Element {
   const theme = useTheme();
   const rule = "─".repeat(Math.max(12, 74 - String(props.label || "").length));
@@ -906,7 +919,7 @@ function HatchRuntime(): JSX.Element {
     if (isWabaSetupRequest) {
       addTurn("user", rewrittenInput);
       setPendingFlow({ kind: "auth_login", stage: "await_token", api: "whatsapp" });
-      await streamAssistantTurn("Let's set up WhatsApp now. Paste your WhatsApp access token and I will hide it in chat logs. Type `cancel` to stop.");
+      await streamAssistantTurn(buildTokenPrompt("whatsapp", "Let's set up WhatsApp now."));
       return;
     }
 
@@ -923,7 +936,7 @@ function HatchRuntime(): JSX.Element {
         return;
       }
       setPendingFlow({ kind: "auth_login", stage: "await_token", api: chosenApi });
-      await streamAssistantTurn(`Paste your ${chosenApi} access token now. I will hide it in chat logs. Type \`cancel\` to stop.`);
+      await streamAssistantTurn(buildTokenPrompt(chosenApi));
       return;
     }
 
@@ -961,7 +974,7 @@ function HatchRuntime(): JSX.Element {
         return;
       }
       setPendingFlow({ kind: "auth_login", stage: "await_token", api: authAssist.api });
-      await streamAssistantTurn(`Paste your ${authAssist.api} access token now. I will hide it in chat logs. Type \`cancel\` to stop.`);
+      await streamAssistantTurn(buildTokenPrompt(authAssist.api));
       return;
     }
 
@@ -1339,6 +1352,57 @@ function HatchRuntime(): JSX.Element {
   };
 
   const config = configState.data;
+  const waba = config?.waba || {
+    connected: false,
+    businessId: "",
+    wabaId: "",
+    phoneNumberId: "",
+    webhookCallbackUrl: "",
+    webhookVerifyToken: ""
+  };
+  const setupChecklist: Array<{ label: string; ok: boolean; fix?: string }> = [
+    {
+      label: "WhatsApp access token",
+      ok: Boolean(config?.tokenMap.whatsapp),
+      hint: "Needed to connect your WhatsApp account.",
+      fix: "social auth login -a whatsapp"
+    },
+    {
+      label: "WhatsApp Business connected",
+      ok: Boolean(waba.connected),
+      hint: "Links your business account for messaging.",
+      fix: "social integrations connect waba"
+    },
+    {
+      label: "WhatsApp Business account (ID)",
+      ok: Boolean(waba.wabaId),
+      hint: "Helps us find your WhatsApp business account.",
+      fix: "social integrations connect waba"
+    },
+    {
+      label: "WhatsApp phone number (ID)",
+      ok: Boolean(waba.phoneNumberId),
+      hint: "Required to send messages.",
+      fix: "social integrations connect waba"
+    }
+  ];
+  const missingSetup = setupChecklist.filter((item) => !item.ok);
+  const quickActions = [
+    { label: "Connect WhatsApp", command: "social auth login -a whatsapp", show: !config?.tokenMap.whatsapp },
+    { label: "Connect WhatsApp Business", command: "social integrations connect waba", show: !waba.wabaId || !waba.phoneNumberId },
+    { label: "Run doctor", command: "social doctor", show: true },
+    {
+      label: "Send test message",
+      command: "social waba send --from PHONE_ID --to +15551234567 --body \"Hello\"",
+      show: Boolean(waba.phoneNumberId)
+    }
+  ].filter((item) => item.show);
+  const nextAction = !config?.tokenMap.whatsapp
+    ? { label: "Connect WhatsApp", command: "social auth login -a whatsapp" }
+    : (!waba.wabaId || !waba.phoneNumberId)
+      ? { label: "Connect WhatsApp Business", command: "social integrations connect waba" }
+      : { label: "Run doctor", command: "social doctor" };
+  const readyCount = setupChecklist.filter((item) => item.ok).length;
   const platformStatus = {
     instagram: !!config?.tokenMap.instagram || !!config?.scopes.find((x) => x.includes("instagram")),
     facebook: !!config?.tokenMap.facebook || !!config?.tokenSet,
@@ -1413,6 +1477,58 @@ function HatchRuntime(): JSX.Element {
         {configState.loading ? <Text color={theme.muted}>config loading...</Text> : null}
         {configState.error ? <Text color={theme.error}>config error: {configState.error}</Text> : null}
       </FramedBlock>
+
+      {configState.loading ? null : (
+        <>
+          <SectionHeading label="Onboarding" />
+          <FramedBlock title="Get started">
+            {quickActions.map((item, idx) => (
+              <Box key={item.command}>
+                <Text color={theme.muted}>{`Step ${idx + 1}: `}</Text>
+                <Text color={theme.text}>{item.label}</Text>
+                <Text color={theme.muted}> — </Text>
+                <Text color={theme.accent}>{item.command}</Text>
+              </Box>
+            ))}
+            {nextAction ? (
+              <Box marginTop={1}>
+                <Text color={theme.text}>Next step: </Text>
+                <Text color={theme.text}>{nextAction.label}</Text>
+                <Text color={theme.muted}> — </Text>
+                <Text color={theme.accent}>{nextAction.command}</Text>
+              </Box>
+            ) : null}
+            <Text color={theme.muted}>Tip: copy/paste any line above into chat to run it.</Text>
+            <Text color={theme.muted}>Tip: start with Step 1 if you're unsure.</Text>
+            <Text color={theme.muted}>Tip: type "waba setup" for a guided WhatsApp flow.</Text>
+            <Text color={theme.muted}>Tip: type "help" if you get stuck.</Text>
+          </FramedBlock>
+          <FramedBlock title="Setup checklist" borderColor={missingSetup.length ? theme.warning : theme.muted}>
+            <Text color={theme.muted}>Progress: {readyCount}/{setupChecklist.length} ready.</Text>
+            {missingSetup.length ? (
+              <Text color={theme.muted}>You're close — finish the ones marked NEEDS.</Text>
+            ) : (
+              <Text color={theme.success}>You're all set.</Text>
+            )}
+            {setupChecklist.map((item) => (
+              <Box key={item.label} marginTop={1} flexDirection="column">
+                <Box>
+                  <Text color={item.ok ? theme.success : theme.warning}>
+                    {item.ok ? "READY" : "NEEDS"} {item.label}
+                  </Text>
+                </Box>
+                <Text color={theme.muted}>{item.hint}</Text>
+                {!item.ok && item.fix ? (
+                  <Text color={theme.accent}>Do this (copy/paste): {item.fix}</Text>
+                ) : null}
+              </Box>
+            ))}
+            {!missingSetup.length ? (
+              <Text color={theme.success}>Setup complete.</Text>
+            ) : null}
+          </FramedBlock>
+        </>
+      )}
 
       <SectionHeading label="Transcript" />
       <Box marginTop={1} flexDirection="column">

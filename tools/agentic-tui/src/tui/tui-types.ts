@@ -45,6 +45,14 @@ export interface ConfigSnapshot {
     confidence: number;
     manualLocked: boolean;
   };
+  waba?: {
+    connected: boolean;
+    businessId: string;
+    wabaId: string;
+    phoneNumberId: string;
+    webhookCallbackUrl: string;
+    webhookVerifyToken: string;
+  };
 }
 
 export interface PersistedLog {
@@ -63,4 +71,3 @@ export interface LoadState<T> {
   error: string | null;
   data: T;
 }
-
