@@ -270,7 +270,7 @@ function registerIntegrationsCommand(program) {
       }
 
       let testTo = String(options.testTo || '').trim();
-      if (!testTo && phoneNumberId && process.stdout.isTTY) {
+      if (!testTo && phoneNumberId && process.stdout.isTTY && !options.json) {
         const answer = await inquirer.prompt([
           {
             type: 'confirm',
