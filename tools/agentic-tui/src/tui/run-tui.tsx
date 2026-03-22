@@ -437,11 +437,54 @@ function isSetupOrAuthError(errorText: string): boolean {
   );
 }
 
+function buildRecoverySuggestions(intent: ParsedIntent, errorText: string): string[] {
+  const msg = String(errorText || "").toLowerCase();
+  const out: string[] = [];
+  if (!msg) return out;
+
+  if (isSetupOrAuthError(msg)) {
+    out.push("guided setup", "status");
+  }
+  if (msg.includes("waba") || msg.includes("whatsapp")) {
+    out.push("waba setup", "social integrations connect waba");
+  }
+  if (msg.includes("phone") || msg.includes("phone_number") || msg.includes("phone number")) {
+    out.push("social integrations connect waba");
+  }
+  if (msg.includes("webhook")) {
+    out.push("social integrations connect waba");
+  }
+  if (msg.includes("permission") || msg.includes("scope") || msg.includes("scopes")) {
+    out.push("guided setup", "social auth login -a facebook");
+  }
+
+  if (intent.action === "run_cli") {
+    out.push("logs limit 20", "replay latest");
+  } else if (!out.length) {
+    out.push("logs limit 20");
+  }
+
+  const seen = new Set<string>();
+  return out.filter((item) => {
+    const key = item.toLowerCase().trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 3);
+}
+
+function formatRecoverySuggestions(suggestions: string[]): string {
+  if (!suggestions.length) return "";
+  return ` Next: ${suggestions.map((x) => `\`${x}\``).join(" | ")}`;
+}
+
 function summarizeExecutionForChat(intent: ParsedIntent, result: ExecutionResult): string {
   const output = (result.output || {}) as Record<string, unknown>;
 
   if (!result.ok) {
     const error = String(output.error || "").trim();
+    const recovery = buildRecoverySuggestions(intent, error);
+    const recoveryHint = formatRecoverySuggestions(recovery);
     if (intent.action === "run_cli") {
       const code = Number(output.exit_code);
       const command = String(output.command || "").trim().toLowerCase();
@@ -457,11 +500,11 @@ function summarizeExecutionForChat(intent: ParsedIntent, result: ExecutionResult
         return "For auth, start with `social auth login` and I will guide the rest.";
       }
       if (suggestion) {
-        return `social command failed${suffix}: ${shortText(error, 150)} Try: \`${suggestion}\``;
+        return `social command failed${suffix}: ${shortText(error, 150)} Try: \`${suggestion}\`${recoveryHint}`;
       }
       return error
-        ? `social command failed${suffix}: ${shortText(error, 180)}`
-        : `social command failed${suffix}.`;
+        ? `social command failed${suffix}: ${shortText(error, 180)}${recoveryHint}`
+        : `social command failed${suffix}.${recoveryHint}`;
     }
     const setupIssue = isSetupOrAuthError(error);
     if (intent.action === "unknown") {
@@ -469,16 +512,16 @@ function summarizeExecutionForChat(intent: ParsedIntent, result: ExecutionResult
     }
     if (intent.action === "get_profile") {
       if (setupIssue) {
-        return "I can't identify your profile yet because Facebook auth is not fully set up. Run `social setup`, then try `whoami` again.";
+        return `I can't identify your profile yet because Facebook auth is not fully set up. Run \`social setup\`, then try \`whoami\` again.${recoveryHint}`;
       }
-      return error ? `I couldn't fetch your profile yet: ${error}` : "I couldn't fetch your profile yet. Try `status` or `social setup`.";
+      return error ? `I couldn't fetch your profile yet: ${error}${recoveryHint}` : `I couldn't fetch your profile yet. Try \`status\` or \`social setup\`.${recoveryHint}`;
     }
     if (intent.action === "create_post" || intent.action === "list_ads") {
       if (setupIssue) {
-        return "This workspace is not fully connected yet. Run `social setup` and try again.";
+        return `This workspace is not fully connected yet. Run \`social setup\` and try again.${recoveryHint}`;
       }
     }
-    return error ? `I couldn't finish that yet: ${error}` : "I couldn't finish that request yet.";
+    return error ? `I couldn't finish that yet: ${error}${recoveryHint}` : `I couldn't finish that request yet.${recoveryHint}`;
   }
 
   if (intent.action === "guide") {
@@ -628,12 +671,14 @@ function HatchRuntime(): JSX.Element {
   ]);
   const [showHelp, setShowHelp] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
   const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState("default");
   const [replaySuggestionIndex, setReplaySuggestionIndex] = useState(0);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [historyDraft, setHistoryDraft] = useState("");
+  const [handoffDone, setHandoffDone] = useState(false);
   const [memory, setMemory] = useState<HatchMemoryState>({
     loaded: false,
     sessionId: newSessionId(),
@@ -737,6 +782,26 @@ function HatchRuntime(): JSX.Element {
     void refreshConfig();
     void refreshLogs();
   }, [refreshConfig, refreshLogs]);
+
+  useEffect(() => {
+    if (handoffDone) return;
+    if (logsState.loading) return;
+    const logs = Array.isArray(logsState.data) ? logsState.data : [];
+    if (!logs.length) {
+      setHandoffDone(true);
+      return;
+    }
+    if (chatTurns.length > 0) {
+      setHandoffDone(true);
+      return;
+    }
+    const latest = logs[0];
+    const status = latest.success ? "ok" : "failed";
+    const stamp = shortTime(latest.timestamp);
+    const failures = logs.filter((x) => !x.success).length;
+    addTurn("system", `Last run: ${latest.action} (${status}) at ${stamp}. Recent failures: ${failures}.`);
+    setHandoffDone(true);
+  }, [addTurn, chatTurns.length, handoffDone, logsState.data, logsState.loading]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -945,7 +1010,17 @@ function HatchRuntime(): JSX.Element {
     const isNextActionRequest = rewrittenInput === "__next__" || looksLikeNextAction(rewrittenInput);
     const isWabaSetupRequest = /^(waba|whatsapp)\s+setup$/i.test(rewrittenInput) || /^setup\s+(waba|whatsapp)$/i.test(rewrittenInput);
     const authAssist = detectAuthAssist(rewrittenInput);
-    const openMatch = rewrittenInput.match(/^(open|resolve|retry)\s+(\d+)\s*$/i);
+    const lowerInput = rewrittenInput.toLowerCase();
+    const isRetryLatestRequest = /^(retry|replay)\s+(latest|last)$/.test(lowerInput);
+    const isShowLogsRequest = /^(show|open)\s+logs?$/.test(lowerInput);
+    const isFixLastErrorRequest = /^(fix|resolve)\s+last\s+error$/.test(lowerInput);
+    const isHelpRequest = lowerInput !== "help"
+      && /^(help|help me|what can i do|what can you do|menu|options|show options|show me options|commands)$/i.test(lowerInput);
+    const isStatusRequest = lowerInput !== "status"
+      && /^(status|check status|connection status|are we connected|am i connected)$/i.test(lowerInput);
+    const isDoctorRequest = lowerInput !== "doctor"
+      && /^(doctor|diagnose|health check|check health|run diagnostics)$/i.test(lowerInput);
+    const openMatch = rewrittenInput.match(/^(open|resolve|retry|o|r)\s*(\d+)\s*$/i);
 
     if (isNextActionRequest) {
       addTurn("user", rewrittenInput);
@@ -960,9 +1035,65 @@ function HatchRuntime(): JSX.Element {
       return;
     }
 
+    if (isRetryLatestRequest) {
+      addTurn("user", rewrittenInput);
+      await streamAssistantTurn("Replaying the latest action.");
+      dispatch({ type: "SET_INPUT", value: "replay latest" });
+      await parseAndQueueIntent("replay latest");
+      return;
+    }
+
+    if (isShowLogsRequest) {
+      addTurn("user", rewrittenInput);
+      await streamAssistantTurn("Showing recent logs.");
+      dispatch({ type: "SET_INPUT", value: "logs limit 20" });
+      await parseAndQueueIntent("logs limit 20");
+      return;
+    }
+
+    if (isFixLastErrorRequest) {
+      addTurn("user", rewrittenInput);
+      if (!lastError) {
+        await streamAssistantTurn("No recent errors found.");
+        return;
+      }
+      if (authIssue || missingSetup.length > 0) {
+        await streamAssistantTurn("Looks like an auth/setup issue. Starting guided setup.");
+        dispatch({ type: "SET_INPUT", value: "guided setup" });
+        await parseAndQueueIntent("guided setup");
+        return;
+      }
+      await streamAssistantTurn("Replaying the latest action.");
+      dispatch({ type: "SET_INPUT", value: "replay latest" });
+      await parseAndQueueIntent("replay latest");
+      return;
+    }
+
+    if (isHelpRequest) {
+      addTurn("user", rewrittenInput);
+      dispatch({ type: "SET_INPUT", value: "help" });
+      await parseAndQueueIntent("help");
+      return;
+    }
+
+    if (isStatusRequest) {
+      addTurn("user", rewrittenInput);
+      dispatch({ type: "SET_INPUT", value: "status" });
+      await parseAndQueueIntent("status");
+      return;
+    }
+
+    if (isDoctorRequest) {
+      addTurn("user", rewrittenInput);
+      dispatch({ type: "SET_INPUT", value: "doctor" });
+      await parseAndQueueIntent("doctor");
+      return;
+    }
+
     if (openMatch) {
       addTurn("user", rewrittenInput);
-      const verb = String(openMatch[1] || "").toLowerCase();
+      const verbRaw = String(openMatch[1] || "").toLowerCase();
+      const verb = verbRaw === "o" ? "open" : verbRaw === "r" ? "retry" : verbRaw;
       const index = Number(openMatch[2]) - 1;
       const items = memory.unresolved || [];
       if (!items.length) {
@@ -1339,6 +1470,9 @@ function HatchRuntime(): JSX.Element {
     state.currentIntent,
     state.currentRisk,
     state.showDetails,
+    lastError,
+    authIssue,
+    missingSetup.length,
     nextAction,
     executeDirectRunCli,
     streamAssistantTurn,
@@ -1425,7 +1559,10 @@ function HatchRuntime(): JSX.Element {
         : state.input;
 
     if (showPalette) {
-      if (key.escape || input === "/" || input === "q") setShowPalette(false);
+      if (key.escape || input === "/" || input === "q") {
+        setShowPalette(false);
+        setPaletteQuery("");
+      }
       return;
     }
     if (showHelp && (input === "?" || key.escape)) {
@@ -1486,7 +1623,10 @@ function HatchRuntime(): JSX.Element {
         addTurn("assistant", "Rejected.");
       },
       onToggleRail: () => setRightRailCollapsed((prev) => !prev),
-      onPaletteToggle: () => setShowPalette(true),
+      onPaletteToggle: () => {
+        setPaletteQuery("");
+        setShowPalette(true);
+      },
       onGuide: () => {
         const command = "guided setup";
         dispatch({ type: "SET_INPUT", value: command });
@@ -1735,6 +1875,13 @@ function HatchRuntime(): JSX.Element {
       acc.push({ label: item.label, value: item.value });
       return acc;
     }, []);
+  const paletteFilter = paletteQuery.trim().toLowerCase();
+  const filteredPaletteOptions = paletteFilter
+    ? paletteOptions.filter((item) => (
+      item.label.toLowerCase().includes(paletteFilter)
+      || item.value.toLowerCase().includes(paletteFilter)
+    ))
+    : paletteOptions;
 
   return (
     <Box flexDirection="column">
@@ -1870,7 +2017,7 @@ function HatchRuntime(): JSX.Element {
                 <Text color={theme.accent}>Open items</Text>
                 {openItems.map((item, idx) => (
                   <Text key={`${item.at}-${item.text}`} color={theme.muted}>
-                    - [{idx + 1}] {shortText(item.text, 90)} ({unresolvedHint(item)}) — open {idx + 1} | retry {idx + 1}
+                    - [{idx + 1}] {shortText(item.text, 90)} ({unresolvedHint(item)}) — open {idx + 1} | retry {idx + 1} | o{idx + 1} | r{idx + 1}
                   </Text>
                 ))}
               </Box>
@@ -1950,14 +2097,22 @@ function HatchRuntime(): JSX.Element {
         <>
           <SectionHeading label="Command palette" />
           <FramedBlock title="Palette">
+          <Text color={theme.muted}>Filter:</Text>
+          <TextInput value={paletteQuery} onChange={setPaletteQuery} focus />
+          <Box marginTop={1} />
+          {filteredPaletteOptions.length ? (
           <Select
-            options={paletteOptions}
+            options={filteredPaletteOptions}
             onChange={(value) => {
               setShowPalette(false);
+              setPaletteQuery("");
               dispatch({ type: "SET_INPUT", value });
               void parseAndQueueIntent(value);
             }}
           />
+          ) : (
+            <Text color={theme.muted}>No matches. Try a different keyword.</Text>
+          )}
           </FramedBlock>
         </>
       ) : null}
@@ -1967,11 +2122,11 @@ function HatchRuntime(): JSX.Element {
           <SectionHeading label="Help" />
           <FramedBlock title="Operator notes">
           <Text color={theme.text}>Workflow: describe, plan, approve, execute, review.</Text>
-          <Text color={theme.text}>Commands: /start /setup /next /open /retry /help /doctor /status /config /logs /replay /why /ai ...</Text>
+          <Text color={theme.text}>Commands: /start /setup /next /open /retry /help /doctor /status /config /logs /replay /why /ai ... (o1/r1 shortcuts)</Text>
           <Text color={theme.text}>Memory: say `my name is ...` and later ask `what's my name`.</Text>
           <Text color={theme.text}>Keys: Enter/y approve, n/r reject, e edit slots, d diagnostics.</Text>
           <Text color={theme.text}>Quick: g guided setup, n next step, l logs, {`1-${Math.min(9, quickActions.length)}`} run onboarding steps.</Text>
-          <Text color={theme.muted}>UI: / palette, x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
+          <Text color={theme.muted}>UI: / palette (type to filter), x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
           </FramedBlock>
         </>
       ) : null}
@@ -1979,11 +2134,11 @@ function HatchRuntime(): JSX.Element {
       <SectionHeading label={state.phase === "HIGH_RISK_APPROVAL" ? "Approval" : state.phase === "EDIT_SLOTS" ? "Edit slots" : "Compose"} />
       <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={state.currentRisk === "HIGH" ? riskTone : theme.muted}>
         <Text color={theme.accent}>{inputLabel}</Text>
-        <TextInput value={inputValue} onChange={setInputValue} focus />
+        <TextInput value={inputValue} onChange={setInputValue} focus={!showPalette} />
       </Box>
       <Text color={state.currentRisk === "HIGH" ? riskTone : theme.accent}>{actionHint}</Text>
       <Text color={theme.muted}>
-        Enter confirm | / palette | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
+        Enter confirm | / palette (filter) | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
       </Text>
     </Box>
   );
