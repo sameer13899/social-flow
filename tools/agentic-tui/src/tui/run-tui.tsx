@@ -1074,6 +1074,59 @@ function HatchRuntime(): JSX.Element {
     await runExecution(intent);
   }, [rememberIntent, runExecution, state.showDetails, streamAssistantTurn]);
 
+  const config = configState.data;
+  const waba = config?.waba || {
+    connected: false,
+    businessId: "",
+    wabaId: "",
+    phoneNumberId: "",
+    webhookCallbackUrl: "",
+    webhookVerifyToken: ""
+  };
+  const profileSummary = Array.isArray(config?.profiles) ? config?.profiles : [];
+  const logItems = Array.isArray(logsState.data) ? logsState.data : [];
+  const successCount = logItems.filter((x) => x.success).length;
+  const failCount = logItems.filter((x) => !x.success).length;
+  const lastError = logItems.find((x) => !x.success && x.error)?.error || "";
+  const setupChecklist: Array<{ label: string; ok: boolean; fix?: string; hint?: string }> = [
+    {
+      label: "WhatsApp access token",
+      ok: Boolean(config?.tokenMap.whatsapp),
+      hint: "Needed to connect your WhatsApp account.",
+      fix: "fix token"
+    },
+    {
+      label: "WhatsApp Business connected",
+      ok: Boolean(waba.connected),
+      hint: "Links your business account for messaging.",
+      fix: "social integrations connect waba"
+    },
+    {
+      label: "WhatsApp Business account (ID)",
+      ok: Boolean(waba.wabaId),
+      hint: "Helps us find your WhatsApp business account.",
+      fix: "social integrations connect waba"
+    },
+    {
+      label: "WhatsApp phone number (ID)",
+      ok: Boolean(waba.phoneNumberId),
+      hint: "Required to send messages.",
+      fix: "social integrations connect waba"
+    }
+  ];
+  const missingSetup = setupChecklist.filter((item) => !item.ok);
+  const unresolvedCount = memory.unresolved.length;
+  const nextAction = missingSetup.length > 0
+    ? { label: "Guided setup", command: "guided setup" }
+    : (lastError && isSetupOrAuthError(lastError))
+      ? { label: "Guided setup", command: "guided setup" }
+      : lastError
+        ? { label: "Replay latest", command: "replay latest" }
+      : unresolvedCount > 0
+        ? { label: "Check status", command: "status" }
+        : { label: "Run doctor", command: "social doctor" };
+  const authIssue = Boolean(lastError && isSetupOrAuthError(lastError));
+
   const parseAndQueueIntent = useCallback(async (raw: string): Promise<void> => {
     const input = String(raw || "").trim();
     if (!input) return;
@@ -1191,8 +1244,8 @@ function HatchRuntime(): JSX.Element {
 
     if (isOpenTokenRequest) {
       addTurn("user", rewrittenInput);
-      const fallbackApi: AuthApi = pendingFlow?.kind === "auth_login"
-        ? (pendingFlow.api || "whatsapp")
+      const fallbackApi: AuthApi = pendingFlow?.kind === "auth_login" && pendingFlow.stage === "await_token"
+        ? pendingFlow.api
         : missingSetup.some((item) => item.label.toLowerCase().includes("whatsapp"))
           ? "whatsapp"
           : "facebook";
@@ -1815,51 +1868,10 @@ function HatchRuntime(): JSX.Element {
     dispatch({ type: "SET_INPUT", value });
   };
 
-  const config = configState.data;
-  const waba = config?.waba || {
-    connected: false,
-    businessId: "",
-    wabaId: "",
-    phoneNumberId: "",
-    webhookCallbackUrl: "",
-    webhookVerifyToken: ""
-  };
   const tokenOk = Boolean(config?.tokenMap.whatsapp);
   const wabaOk = Boolean(waba.wabaId && waba.phoneNumberId);
   const webhookOk = Boolean(waba.webhookCallbackUrl);
   const webhookBadge: "OK" | "FAIL" | "SKIP" = wabaOk ? (webhookOk ? "OK" : "FAIL") : "SKIP";
-  const profileSummary = Array.isArray(config?.profiles) ? config?.profiles : [];
-  const logItems = Array.isArray(logsState.data) ? logsState.data : [];
-  const successCount = logItems.filter((x) => x.success).length;
-  const failCount = logItems.filter((x) => !x.success).length;
-  const lastError = logItems.find((x) => !x.success && x.error)?.error || "";
-  const setupChecklist: Array<{ label: string; ok: boolean; fix?: string; hint?: string }> = [
-    {
-      label: "WhatsApp access token",
-      ok: Boolean(config?.tokenMap.whatsapp),
-      hint: "Needed to connect your WhatsApp account.",
-      fix: "fix token"
-    },
-    {
-      label: "WhatsApp Business connected",
-      ok: Boolean(waba.connected),
-      hint: "Links your business account for messaging.",
-      fix: "social integrations connect waba"
-    },
-    {
-      label: "WhatsApp Business account (ID)",
-      ok: Boolean(waba.wabaId),
-      hint: "Helps us find your WhatsApp business account.",
-      fix: "social integrations connect waba"
-    },
-    {
-      label: "WhatsApp phone number (ID)",
-      ok: Boolean(waba.phoneNumberId),
-      hint: "Required to send messages.",
-      fix: "social integrations connect waba"
-    }
-  ];
-  const missingSetup = setupChecklist.filter((item) => !item.ok);
   const hasTokenGap = missingSetup.some((item) => item.label.toLowerCase().includes("access token"));
   const setupFixActions = dedupeQuickActions(
     missingSetup
@@ -1929,7 +1941,6 @@ function HatchRuntime(): JSX.Element {
   const industrySelected = String(config?.industry?.selected || "").trim();
   const industryLabel = industrySelected || `${industryMode} (auto)`;
   const memoryLabel = memory.profileName ? memory.profileName : "anon";
-  const unresolvedCount = memory.unresolved.length;
   const riskTone = state.currentRisk === "HIGH" ? theme.error : state.currentRisk === "MEDIUM" ? theme.warning : theme.success;
   const phaseTone = state.phase === "EXECUTING" ? theme.accent : state.phase === "REJECTED" ? theme.warning : theme.text;
   const topActivity = state.liveLogs[state.liveLogs.length - 1];
@@ -1960,17 +1971,7 @@ function HatchRuntime(): JSX.Element {
   const recentLogs = state.liveLogs.slice(-10);
   const recentRollbacks = state.rollbackHistory.slice(-5);
   const resultPreview = state.results ? JSON.stringify(state.results, null, 2) : "";
-  const nextAction = missingSetup.length > 0
-    ? { label: "Guided setup", command: "guided setup" }
-    : (lastError && isSetupOrAuthError(lastError))
-      ? { label: "Guided setup", command: "guided setup" }
-      : lastError
-        ? { label: "Replay latest", command: "replay latest" }
-      : unresolvedCount > 0
-        ? { label: "Check status", command: "status" }
-        : { label: "Run doctor", command: "social doctor" };
   const openItems = memory.unresolved.slice(0, 3);
-  const authIssue = Boolean(lastError && isSetupOrAuthError(lastError));
   const focusTone = missingSetup.length
     ? theme.warning
     : lastError
