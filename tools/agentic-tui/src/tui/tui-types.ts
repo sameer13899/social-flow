@@ -53,6 +53,13 @@ export interface ConfigSnapshot {
     webhookCallbackUrl: string;
     webhookVerifyToken: string;
   };
+  profiles?: Array<{
+    name: string;
+    tokenSet: boolean;
+    whatsappToken: boolean;
+    wabaConnected: boolean;
+    phoneNumberId: boolean;
+  }>;
 }
 
 export interface PersistedLog {

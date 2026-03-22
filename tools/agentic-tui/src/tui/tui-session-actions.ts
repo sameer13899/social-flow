@@ -481,6 +481,34 @@ export async function loadConfigSnapshot(): Promise<ConfigSnapshot> {
       ? parsed.scopes.map((x) => String(x))
       : [];
 
+  const profilesMap = parsed?.profiles && typeof parsed.profiles === "object" ? parsed.profiles : {};
+  const profileNames = Object.keys(profilesMap);
+  if (!profileNames.includes(activeProfile)) profileNames.unshift(activeProfile);
+  const profiles = profileNames.map((name) => {
+    const doc = profilesMap[name] || {};
+    const docTokens = doc.tokens || {};
+    const docIntegrations = doc.integrations || {};
+    const isActive = name === activeProfile;
+    const mergedTokens = isActive
+      ? {
+        facebook: docTokens.facebook || flatTokens.facebook || parsed?.token,
+        instagram: docTokens.instagram || flatTokens.instagram,
+        whatsapp: docTokens.whatsapp || flatTokens.whatsapp
+      }
+      : docTokens;
+    const mergedWaba = isActive
+      ? (docIntegrations.waba || flatIntegrations.waba || {})
+      : (docIntegrations.waba || {});
+    const hasToken = Boolean(mergedTokens.facebook || mergedTokens.instagram || mergedTokens.whatsapp);
+    return {
+      name,
+      tokenSet: hasToken,
+      whatsappToken: Boolean(mergedTokens.whatsapp),
+      wabaConnected: Boolean(mergedWaba.connected),
+      phoneNumberId: Boolean(mergedWaba.phoneNumberId)
+    };
+  });
+
   return {
     activeProfile,
     tokenSet: tokenMap.facebook || tokenMap.instagram || tokenMap.whatsapp,
@@ -503,7 +531,8 @@ export async function loadConfigSnapshot(): Promise<ConfigSnapshot> {
       phoneNumberId: String(waba.phoneNumberId || ""),
       webhookCallbackUrl: String(waba.webhookCallbackUrl || ""),
       webhookVerifyToken: String(waba.webhookVerifyToken || "")
-    }
+    },
+    profiles
   };
 }
 

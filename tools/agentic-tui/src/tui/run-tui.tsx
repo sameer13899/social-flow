@@ -1457,6 +1457,11 @@ function HatchRuntime(): JSX.Element {
   const recentLogs = state.liveLogs.slice(-10);
   const recentRollbacks = state.rollbackHistory.slice(-5);
   const resultPreview = state.results ? JSON.stringify(state.results, null, 2) : "";
+  const profileSummary = Array.isArray(config?.profiles) ? config?.profiles : [];
+  const logItems = Array.isArray(logsState.data) ? logsState.data : [];
+  const successCount = logItems.filter((x) => x.success).length;
+  const failCount = logItems.filter((x) => !x.success).length;
+  const lastError = logItems.find((x) => !x.success && x.error)?.error || "";
 
   return (
     <Box flexDirection="column">
@@ -1526,6 +1531,37 @@ function HatchRuntime(): JSX.Element {
             {!missingSetup.length ? (
               <Text color={theme.success}>Setup complete.</Text>
             ) : null}
+          </FramedBlock>
+
+          <SectionHeading label="Profiles" />
+          <FramedBlock title="Portfolio">
+            {profileSummary.length ? (
+              profileSummary.map((p) => (
+                <Box key={p.name}>
+                  <Text color={p.name === config?.activeProfile ? theme.success : theme.text}>
+                    {p.name}{p.name === config?.activeProfile ? " (active)" : ""}
+                  </Text>
+                  <Text color={theme.muted}> — token </Text>
+                  <Text color={p.tokenSet ? theme.success : theme.warning}>{p.tokenSet ? "ready" : "needs"}</Text>
+                  <Text color={theme.muted}> | business </Text>
+                  <Text color={p.wabaConnected ? theme.success : theme.warning}>{p.wabaConnected ? "ready" : "needs"}</Text>
+                  <Text color={theme.muted}> | phone </Text>
+                  <Text color={p.phoneNumberId ? theme.success : theme.warning}>{p.phoneNumberId ? "ready" : "needs"}</Text>
+                </Box>
+              ))
+            ) : (
+              <Text color={theme.muted}>No profiles found. Add one with: social accounts add &lt;name&gt;</Text>
+            )}
+            <Text color={theme.muted}>Switch profile: social accounts switch &lt;name&gt;</Text>
+          </FramedBlock>
+
+          <FramedBlock title="Activity">
+            <Text color={theme.text}>Runs: {successCount} ok / {failCount} failed</Text>
+            {lastError ? (
+              <Text color={theme.warning}>Last error: {shortText(lastError, 140)}</Text>
+            ) : (
+              <Text color={theme.muted}>No recent errors.</Text>
+            )}
           </FramedBlock>
         </>
       )}
