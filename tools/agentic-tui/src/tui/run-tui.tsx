@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import { Select } from "@inkjs/ui";
 import TextInput from "ink-text-input";
+import { spawn } from "node:child_process";
 
 import { getExecutor } from "../executors/registry.js";
 import { applySlotEdits, parseNaturalLanguageWithOptionalAi } from "../parser/intent-parser.js";
@@ -90,12 +91,59 @@ function apiLabel(api: AuthApi): string {
   return `${api.charAt(0).toUpperCase()}${api.slice(1)}`;
 }
 
+function tokenDashboardUrl(api: AuthApi): string {
+  if (api === "whatsapp") {
+    return "https://developers.facebook.com/apps/";
+  }
+  if (api === "instagram") {
+    return "https://developers.facebook.com/apps/";
+  }
+  return "https://developers.facebook.com/apps/";
+}
+
+function setupProgressBar(done: number, total: number, width = 16): string {
+  if (!Number.isFinite(total) || total <= 0) return "[----------------]";
+  const ratio = Math.max(0, Math.min(1, done / total));
+  const filled = Math.round(ratio * width);
+  const bar = `${"=".repeat(filled)}${"-".repeat(Math.max(0, width - filled))}`;
+  return `[${bar}]`;
+}
+
+function openExternalUrl(url: string): Promise<boolean> {
+  if (!url) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const platform = process.platform;
+    let command = "xdg-open";
+    let args = [url];
+    if (platform === "win32") {
+      command = "cmd";
+      args = ["/c", "start", "", url];
+    } else if (platform === "darwin") {
+      command = "open";
+      args = [url];
+    }
+
+    const child = spawn(command, args, { stdio: "ignore", detached: true });
+    child.on("error", () => resolve(false));
+    child.unref();
+    resolve(true);
+  });
+}
+
+function inferTokenApi(text: string, fallback: AuthApi): AuthApi {
+  const lower = String(text || "").toLowerCase();
+  if (lower.includes("whatsapp") || lower.includes("waba")) return "whatsapp";
+  if (lower.includes("instagram") || lower.includes("ig")) return "instagram";
+  if (lower.includes("facebook") || lower.includes("meta")) return "facebook";
+  return fallback;
+}
+
 function buildTokenPrompt(api: AuthApi, intro?: string): string {
   const label = apiLabel(api);
   const prefix = intro ? `${intro} ` : "";
   const base = `${prefix}Paste your ${label} access token now. I will hide it in chat logs. Type \`cancel\` to stop.`;
   if (api !== "whatsapp") return base;
-  return `${base} Copy it from Meta App Dashboard -> WhatsApp -> API Setup. Troubleshooting: if "Generate access token" is missing, ensure WhatsApp is added to your app and you are in the correct app.`;
+  return `${base} Copy it from Meta App Dashboard -> WhatsApp -> API Setup. Dashboard: ${tokenDashboardUrl("whatsapp")}. Tip: type \`open whatsapp token\` to open it. Troubleshooting: if "Generate access token" is missing, ensure WhatsApp is added to your app and you are in the correct app.`;
 }
 
 function SectionHeading(props: { label: string }): JSX.Element {
@@ -108,6 +156,13 @@ function SectionHeading(props: { label: string }): JSX.Element {
       <Text color={theme.muted}>{rule}</Text>
     </Box>
   );
+}
+
+function StatusBadge(props: { label: "OK" | "FAIL" | "SKIP"; tone?: "ok" | "fail" | "skip" }): JSX.Element {
+  const theme = useTheme();
+  const tone = props.tone || (props.label === "OK" ? "ok" : props.label === "FAIL" ? "fail" : "skip");
+  const color = tone === "ok" ? theme.success : tone === "fail" ? theme.error : theme.muted;
+  return <Text color={color} bold>{`[${props.label}]`}</Text>;
 }
 
 function FramedBlock(props: {
@@ -688,6 +743,11 @@ function HatchRuntime(): JSX.Element {
   });
   const [pendingFlow, setPendingFlow] = useState<PendingFlowState | null>(null);
   const [postAuthAction, setPostAuthAction] = useState<PostAuthAction>(null);
+  const tokenDashboardOpened = useRef<Record<AuthApi, boolean>>({
+    facebook: false,
+    instagram: false,
+    whatsapp: false
+  });
 
   const [configState, setConfigState] = useState<LoadState<ConfigSnapshot | null>>({
     loading: true,
@@ -749,6 +809,19 @@ function HatchRuntime(): JSX.Element {
     }
     setChatTurns((prev) => prev.map((x) => (x.id === turn.id ? { ...x, text: full } : x)));
   }, []);
+
+  const openTokenDashboard = useCallback(async (api: AuthApi, opts?: { silent?: boolean; force?: boolean }): Promise<void> => {
+    if (!opts?.force && tokenDashboardOpened.current[api]) return;
+    tokenDashboardOpened.current[api] = true;
+    const url = tokenDashboardUrl(api);
+    const opened = await openExternalUrl(url);
+    if (opts?.silent) return;
+    if (opened) {
+      await streamAssistantTurn(`Opening ${apiLabel(api)} token page in your browser.`);
+    } else {
+      await streamAssistantTurn(`Open ${apiLabel(api)} token page: ${url}`);
+    }
+  }, [streamAssistantTurn]);
 
   const streamPhase = useCallback(async (label: string, detail?: string) => {
     await streamAssistantTurn(`${label}${detail ? `: ${detail}` : ""}`);
@@ -1011,11 +1084,14 @@ function HatchRuntime(): JSX.Element {
     const isWabaSetupRequest = /^(waba|whatsapp)\s+setup$/i.test(rewrittenInput) || /^setup\s+(waba|whatsapp)$/i.test(rewrittenInput);
     const authAssist = detectAuthAssist(rewrittenInput);
     const lowerInput = rewrittenInput.toLowerCase();
-    const isRetryLatestRequest = /^(retry|replay)\s+(latest|last)$/.test(lowerInput);
-    const isShowLogsRequest = /^(show|open)\s+logs?$/.test(lowerInput);
-    const isFixLastErrorRequest = /^(fix|resolve)\s+last\s+error$/.test(lowerInput);
+    const isRetryLatestRequest = /^(retry|replay)(\s+(latest|last))?$/.test(lowerInput);
+    const isShowLogsRequest = /^(logs?|show\s+logs?|open\s+logs?)$/.test(lowerInput);
+    const isFixLastErrorRequest = /^(fix|resolve)(\s+(last\s+)?(error|issue))?$/.test(lowerInput);
+    const isFixTokenRequest = /^(fix|resolve|repair)\s+(whatsapp\s+)?(token|auth|login)$/.test(lowerInput);
+    const isOpenTokenRequest = /^(open|launch|go to)\s+/.test(lowerInput)
+      && /(token|dashboard|developer|developers|api setup|app dashboard|meta)/.test(lowerInput);
     const isHelpRequest = lowerInput !== "help"
-      && /^(help|help me|what can i do|what can you do|menu|options|show options|show me options|commands)$/i.test(lowerInput);
+      && /^(help|help me|what can i do|what can you do|menu|options|show options|show me options|commands|what can i run|what next)$/i.test(lowerInput);
     const isStatusRequest = lowerInput !== "status"
       && /^(status|check status|connection status|are we connected|am i connected)$/i.test(lowerInput);
     const isDoctorRequest = lowerInput !== "doctor"
@@ -1069,6 +1145,29 @@ function HatchRuntime(): JSX.Element {
       return;
     }
 
+    if (isFixTokenRequest) {
+      addTurn("user", rewrittenInput);
+      const currentConfig = configState.data;
+      const targetApi = inferTokenApi(lowerInput, "whatsapp");
+      const tokenSet = targetApi === "whatsapp"
+        ? Boolean(currentConfig?.tokenMap.whatsapp)
+        : targetApi === "instagram"
+          ? Boolean(currentConfig?.tokenMap.instagram)
+          : Boolean(currentConfig?.tokenMap.facebook || currentConfig?.tokenSet);
+      if (tokenSet) {
+        const followUp = targetApi === "whatsapp"
+          ? "WhatsApp token is already connected. Next: social integrations connect waba."
+          : "Token already connected. Try: status.";
+        await streamAssistantTurn(followUp);
+        return;
+      }
+      setPendingFlow({ kind: "auth_login", stage: "await_token", api: targetApi });
+      if (targetApi === "whatsapp") setPostAuthAction("connect_waba");
+      await streamAssistantTurn(buildTokenPrompt(targetApi, "Let's fix your token now."));
+      await openTokenDashboard(targetApi, { force: true });
+      return;
+    }
+
     if (isHelpRequest) {
       addTurn("user", rewrittenInput);
       dispatch({ type: "SET_INPUT", value: "help" });
@@ -1087,6 +1186,18 @@ function HatchRuntime(): JSX.Element {
       addTurn("user", rewrittenInput);
       dispatch({ type: "SET_INPUT", value: "doctor" });
       await parseAndQueueIntent("doctor");
+      return;
+    }
+
+    if (isOpenTokenRequest) {
+      addTurn("user", rewrittenInput);
+      const fallbackApi: AuthApi = pendingFlow?.kind === "auth_login"
+        ? (pendingFlow.api || "whatsapp")
+        : missingSetup.some((item) => item.label.toLowerCase().includes("whatsapp"))
+          ? "whatsapp"
+          : "facebook";
+      const api = inferTokenApi(lowerInput, fallbackApi);
+      await openTokenDashboard(api, { force: true });
       return;
     }
 
@@ -1137,6 +1248,20 @@ function HatchRuntime(): JSX.Element {
       return;
     }
 
+    if (/^(open|retry|resolve)\s*$/i.test(rewrittenInput)) {
+      addTurn("user", rewrittenInput);
+      const items = memory.unresolved || [];
+      if (!items.length) {
+        await streamAssistantTurn("No open items yet.");
+        return;
+      }
+      const preview = items.slice(0, 3).map((item, idx) => (
+        `${idx + 1}. ${shortText(item.text, 72)} (${unresolvedHint(item)})`
+      )).join("\n");
+      await streamAssistantTurn(`Open items:\n${preview}\nType: open 1 or retry 1.`);
+      return;
+    }
+
     if (isGuidedSetupRequest) {
       addTurn("user", rewrittenInput);
       const currentConfig = configState.data;
@@ -1153,6 +1278,7 @@ function HatchRuntime(): JSX.Element {
         setPendingFlow({ kind: "auth_login", stage: "await_token", api: "whatsapp" });
         setPostAuthAction("connect_waba");
         await streamAssistantTurn(buildTokenPrompt("whatsapp", "Let's connect WhatsApp first."));
+        await openTokenDashboard("whatsapp");
         await streamAssistantTurn("After we verify it, I'll connect WhatsApp Business automatically.");
         return;
       }
@@ -1186,6 +1312,7 @@ function HatchRuntime(): JSX.Element {
         setPendingFlow({ kind: "auth_login", stage: "await_token", api: "whatsapp" });
         setPostAuthAction("connect_waba");
         await streamAssistantTurn(buildTokenPrompt("whatsapp", "Let's set up WhatsApp now."));
+        await openTokenDashboard("whatsapp");
         await streamAssistantTurn("After we verify it, I'll connect WhatsApp Business automatically.");
         return;
       }
@@ -1266,6 +1393,7 @@ function HatchRuntime(): JSX.Element {
       }
       setPendingFlow({ kind: "auth_login", stage: "await_token", api: authAssist.api });
       await streamAssistantTurn(buildTokenPrompt(authAssist.api));
+      await openTokenDashboard(authAssist.api);
       return;
     }
 
@@ -1333,7 +1461,8 @@ function HatchRuntime(): JSX.Element {
       const opener = memory.profileName ? `Hey ${memory.profileName}, I'm here.` : "Hey, I'm here.";
       const pending = memory.unresolved[0];
       const pendingHint = pending ? ` You still have one open item: "${shortText(pending.text, 72)}".` : "";
-      const fallback = `${opener}${pendingHint} Want \`status\`, \`whoami\`, or \`social setup\`?`;
+      const nextHint = nextAction ? ` Next: ${nextAction.label} — ${nextAction.command}.` : "";
+      const fallback = `${opener}${pendingHint}${nextHint} Want \`status\` or \`help\`?`;
       const reply = await generateConversationalReply({
         userText: rewrittenInput,
         fallback,
@@ -1472,9 +1601,10 @@ function HatchRuntime(): JSX.Element {
     state.showDetails,
     lastError,
     authIssue,
-    missingSetup.length,
+    missingSetup,
     nextAction,
     executeDirectRunCli,
+    openTokenDashboard,
     streamAssistantTurn,
     streamPhase
   ]);
@@ -1694,17 +1824,21 @@ function HatchRuntime(): JSX.Element {
     webhookCallbackUrl: "",
     webhookVerifyToken: ""
   };
+  const tokenOk = Boolean(config?.tokenMap.whatsapp);
+  const wabaOk = Boolean(waba.wabaId && waba.phoneNumberId);
+  const webhookOk = Boolean(waba.webhookCallbackUrl);
+  const webhookBadge: "OK" | "FAIL" | "SKIP" = wabaOk ? (webhookOk ? "OK" : "FAIL") : "SKIP";
   const profileSummary = Array.isArray(config?.profiles) ? config?.profiles : [];
   const logItems = Array.isArray(logsState.data) ? logsState.data : [];
   const successCount = logItems.filter((x) => x.success).length;
   const failCount = logItems.filter((x) => !x.success).length;
   const lastError = logItems.find((x) => !x.success && x.error)?.error || "";
-  const setupChecklist: Array<{ label: string; ok: boolean; fix?: string }> = [
+  const setupChecklist: Array<{ label: string; ok: boolean; fix?: string; hint?: string }> = [
     {
       label: "WhatsApp access token",
       ok: Boolean(config?.tokenMap.whatsapp),
       hint: "Needed to connect your WhatsApp account.",
-      fix: "social auth login -a whatsapp"
+      fix: "fix token"
     },
     {
       label: "WhatsApp Business connected",
@@ -1726,8 +1860,16 @@ function HatchRuntime(): JSX.Element {
     }
   ];
   const missingSetup = setupChecklist.filter((item) => !item.ok);
+  const hasTokenGap = missingSetup.some((item) => item.label.toLowerCase().includes("access token"));
+  const setupFixActions = dedupeQuickActions(
+    missingSetup
+      .filter((item) => item.fix)
+      .map((item) => ({ label: item.label, command: String(item.fix) }))
+  );
   const baseQuickActions = [
     { label: "Guided setup", command: "guided setup", show: missingSetup.length > 0 },
+    { label: "Fix token (agent)", command: "fix token", show: !config?.tokenMap.whatsapp },
+    { label: "Open WhatsApp token page", command: "open whatsapp token", show: !config?.tokenMap.whatsapp },
     { label: "Connect WhatsApp", command: "social auth login -a whatsapp", show: !config?.tokenMap.whatsapp },
     { label: "Connect WhatsApp Business", command: "social integrations connect waba", show: !waba.wabaId || !waba.phoneNumberId },
     { label: "Run doctor", command: "social doctor", show: true },
@@ -1740,6 +1882,7 @@ function HatchRuntime(): JSX.Element {
     .map((item) => ({ label: item.label, command: item.command }));
   const recoveryQuickActions: QuickAction[] = lastError
     ? [
+      { label: "Fix last error", command: "fix last error" },
       { label: "Replay latest", command: "replay latest" },
       { label: "Show logs", command: "logs limit 20" }
     ]
@@ -1748,6 +1891,15 @@ function HatchRuntime(): JSX.Element {
       : [];
   const quickActions = dedupeQuickActions([...recoveryQuickActions, ...baseQuickActions]);
   const readyCount = setupChecklist.filter((item) => item.ok).length;
+  const setupProgress = setupProgressBar(readyCount, setupChecklist.length);
+  const nextSetup = missingSetup[0];
+  const nextSetupLabel = nextSetup
+    ? `${nextSetup.label}${nextSetup.fix ? ` -> ${nextSetup.fix}` : ""}`
+    : "";
+  const readinessLabel = missingSetup.length
+    ? `setup ${readyCount}/${setupChecklist.length}`
+    : "ready to send";
+  const readinessTone = missingSetup.length ? theme.warning : theme.success;
   const platformStatus = {
     instagram: !!config?.tokenMap.instagram || !!config?.scopes.find((x) => x.includes("instagram")),
     facebook: !!config?.tokenMap.facebook || !!config?.tokenSet,
@@ -1791,12 +1943,18 @@ function HatchRuntime(): JSX.Element {
   });
   const verboseMode = state.showDetails;
   const runtimeLabel = state.phase === "EXECUTING" ? "executing" : "ready";
-  const actionHint = buildActionBarHint({
+  const actionHintBase = buildActionBarHint({
     phase: state.phase,
     hasIntent: Boolean(state.currentIntent),
     hasReplaySuggestions: replaySuggestions.length > 0,
-    verboseMode
+    verboseMode,
+    hasLastError: Boolean(lastError),
+    hasOpenItems: unresolvedCount > 0,
+    hasSetupGap: missingSetup.length > 0
   });
+  const actionHint = hasTokenGap
+    ? `${actionHintBase} | fix token | open whatsapp token`
+    : actionHintBase;
 
   const recentQueue = state.actionQueue.slice(-5);
   const recentLogs = state.liveLogs.slice(-10);
@@ -1842,15 +2000,17 @@ function HatchRuntime(): JSX.Element {
         ? "There are unresolved items waiting on you."
         : "All systems ready.";
   const focusActions = missingSetup.length
-    ? [{ label: "Guided setup", command: "guided setup" }]
+    ? dedupeQuickActions([{ label: "Guided setup", command: "guided setup" }, ...setupFixActions]).slice(0, 3)
     : lastError
       ? authIssue
         ? [
+          { label: "Fix last error", command: "fix last error" },
           { label: "Guided setup", command: "guided setup" },
           { label: "Check status", command: "status" },
           { label: "Show logs", command: "logs limit 20" }
         ]
         : [
+          { label: "Fix last error", command: "fix last error" },
           { label: "Replay latest", command: "replay latest" },
           { label: "Show logs", command: "logs limit 20" }
         ]
@@ -1863,10 +2023,16 @@ function HatchRuntime(): JSX.Element {
           { label: "Run doctor", command: "social doctor" },
           { label: "Check status", command: "status" }
         ];
+  const recentFail = logItems.find((x) => !x.success);
+  const lastActionLabel = recentFail
+    ? `${recentFail.action}${recentFail.error ? ` — ${shortText(recentFail.error, 90)}` : ""}`
+    : "";
   const paletteOptions = [
     ...quickActions.map((item) => ({ label: `Quick: ${item.label}`, value: item.command, show: true })),
+    ...setupFixActions.map((item) => ({ label: `Setup: ${item.label}`, value: item.command, show: true })),
     { label: "Guided setup (recommended)", value: "guided setup", show: missingSetup.length > 0 || authIssue },
     nextAction ? { label: `Next step: ${nextAction.label}`, value: nextAction.command, show: true } : null,
+    lastError ? { label: "Fix last error", value: "fix last error", show: true } : null,
     { label: "Doctor", value: "doctor", show: true },
     { label: "Status", value: "status", show: true },
     { label: "Why this plan", value: "__why__", show: true },
@@ -1895,6 +2061,15 @@ function HatchRuntime(): JSX.Element {
 
   return (
     <Box flexDirection="column">
+      <Box marginBottom={1}>
+        <StatusBadge label={tokenOk ? "OK" : "FAIL"} tone={tokenOk ? "ok" : "fail"} />
+        <Text color={theme.muted}> token </Text>
+        <StatusBadge label={wabaOk ? "OK" : "FAIL"} tone={wabaOk ? "ok" : "fail"} />
+        <Text color={theme.muted}> waba </Text>
+        <StatusBadge label={webhookBadge} tone={webhookBadge === "OK" ? "ok" : webhookBadge === "FAIL" ? "fail" : "skip"} />
+        <Text color={theme.muted}> webhook </Text>
+        <Text color={theme.muted}>| profile {config?.activeProfile || "default"}</Text>
+      </Box>
       <SectionHeading label="Social Flow hatch" />
       <FramedBlock title="Runtime">
         <Text color={theme.text}>
@@ -1906,12 +2081,58 @@ function HatchRuntime(): JSX.Element {
         <Text color={theme.muted}>
           industry {industryLabel} | memory {memoryLabel} | open items {unresolvedCount} | runtime {runtimeLabel}
         </Text>
+        <Text color={readinessTone}>readiness {readinessLabel}</Text>
+        <Text color={theme.muted}>
+          setup progress {setupProgress} ({readyCount}/{setupChecklist.length})
+        </Text>
+        {missingSetup.length ? (
+          <Text color={theme.warning}>next: {nextSetupLabel}</Text>
+        ) : null}
+        {missingSetup.length ? (
+          <Box marginTop={1} flexDirection="column">
+            <Text color={theme.warning}>setup checklist</Text>
+            {setupChecklist.map((item) => (
+              <Box key={item.label} flexDirection="column">
+                <Box>
+                  <StatusBadge label={item.ok ? "OK" : "FAIL"} tone={item.ok ? "ok" : "fail"} />
+                  <Text color={item.ok ? theme.text : theme.warning}>
+                    {" "}{item.label}{item.ok ? "" : item.fix ? ` -> ${item.fix}` : ""}
+                  </Text>
+                </Box>
+                {!item.ok && item.hint ? <Text color={theme.muted}>  {item.hint}</Text> : null}
+              </Box>
+            ))}
+          </Box>
+        ) : (
+          <Box>
+            <StatusBadge label="OK" tone="ok" />
+            <Text color={theme.success}> setup checklist: all green.</Text>
+          </Box>
+        )}
         <Text color={theme.muted}>
           latest {topActivity ? `${shortTime(topActivity.at)} ${topActivity.message.slice(0, 72)}` : "idle"}
         </Text>
         {configState.loading ? <Text color={theme.muted}>config loading...</Text> : null}
         {configState.error ? <Text color={theme.error}>config error: {configState.error}</Text> : null}
       </FramedBlock>
+
+      {lastError ? (
+        <>
+          <SectionHeading label="Recovery" />
+          <FramedBlock title="Recovery" borderColor={theme.error}>
+            <Box>
+              <StatusBadge label="FAIL" tone="fail" />
+              <Text color={theme.error}> Last error: {shortText(lastError, 160)}</Text>
+            </Box>
+            {unresolvedCount === 0 ? (
+              <Text color={theme.muted}>Hotkeys: 1 Fix last error | 2 Replay latest | 3 Show logs</Text>
+            ) : (
+              <Text color={theme.muted}>Tip: open items take 1-3; type the recovery commands below.</Text>
+            )}
+            <Text color={theme.muted}>Commands: fix last error | replay latest | logs limit 20</Text>
+          </FramedBlock>
+        </>
+      ) : null}
 
       {configState.loading ? null : (
         <>
@@ -1920,6 +2141,9 @@ function HatchRuntime(): JSX.Element {
             <Text color={focusTone}>{focusTitle}</Text>
             <Text color={theme.muted}>{focusDetail}</Text>
             <Text color={theme.muted}>Reason: {focusReason}</Text>
+            {lastActionLabel ? (
+              <Text color={theme.muted}>Last failed action: {lastActionLabel}</Text>
+            ) : null}
             {focusActions.length ? (
               <Box marginTop={1} flexDirection="column">
                 <Text color={theme.accent}>Suggested actions</Text>
@@ -1968,6 +2192,7 @@ function HatchRuntime(): JSX.Element {
               <Text color={theme.muted}>Tip: if open items exist, 1-3 targets them before quick actions.</Text>
             ) : null}
             <Text color={theme.muted}>Tip: press g or type /start for guided setup, n or /next for next step.</Text>
+            <Text color={theme.muted}>Tip: type /fix to recover from the last error.</Text>
             <Text color={theme.muted}>Tip: type "waba setup" for WhatsApp only.</Text>
             <Text color={theme.muted}>Tip: type "help" if you get stuck.</Text>
           </FramedBlock>
@@ -2005,11 +2230,11 @@ function HatchRuntime(): JSX.Element {
                     {p.name}{p.name === config?.activeProfile ? " (active)" : ""}
                   </Text>
                   <Text color={theme.muted}> — token </Text>
-                  <Text color={p.tokenSet ? theme.success : theme.warning}>{p.tokenSet ? "ready" : "needs"}</Text>
+                  <StatusBadge label={p.tokenSet ? "OK" : "FAIL"} tone={p.tokenSet ? "ok" : "fail"} />
                   <Text color={theme.muted}> | business </Text>
-                  <Text color={p.wabaConnected ? theme.success : theme.warning}>{p.wabaConnected ? "ready" : "needs"}</Text>
+                  <StatusBadge label={p.wabaConnected ? "OK" : "FAIL"} tone={p.wabaConnected ? "ok" : "fail"} />
                   <Text color={theme.muted}> | phone </Text>
-                  <Text color={p.phoneNumberId ? theme.success : theme.warning}>{p.phoneNumberId ? "ready" : "needs"}</Text>
+                  <StatusBadge label={p.phoneNumberId ? "OK" : "FAIL"} tone={p.phoneNumberId ? "ok" : "fail"} />
                 </Box>
               ))
             ) : (
@@ -2019,23 +2244,43 @@ function HatchRuntime(): JSX.Element {
           </FramedBlock>
 
           <FramedBlock title="Activity">
-            <Text color={theme.text}>Runs: {successCount} ok / {failCount} failed</Text>
+            <Box>
+              <Text color={theme.text}>Runs: </Text>
+              <StatusBadge label="OK" tone="ok" />
+              <Text color={theme.text}> {successCount} </Text>
+              <StatusBadge label="FAIL" tone="fail" />
+              <Text color={theme.text}> {failCount}</Text>
+            </Box>
             {lastError ? (
-              <Text color={theme.warning}>Last error: {shortText(lastError, 140)}</Text>
+              <Box>
+                <StatusBadge label="FAIL" tone="fail" />
+                <Text color={theme.warning}> Last error: {shortText(lastError, 140)}</Text>
+              </Box>
             ) : (
-              <Text color={theme.muted}>No recent errors.</Text>
+              <Box>
+                <StatusBadge label="OK" tone="ok" />
+                <Text color={theme.muted}> No recent errors.</Text>
+              </Box>
             )}
             {openItems.length ? (
               <Box marginTop={1} flexDirection="column">
                 <Text color={theme.accent}>Open items</Text>
                 {openItems.map((item, idx) => (
-                  <Text key={`${item.at}-${item.text}`} color={theme.muted}>
-                    - [{idx + 1}] {shortText(item.text, 90)} ({unresolvedHint(item)}) — open {idx + 1} | retry {idx + 1} | o{idx + 1} | r{idx + 1}
-                  </Text>
+                  <Box key={`${item.at}-${item.text}`}>
+                    <StatusBadge label="FAIL" tone="fail" />
+                    <Text color={theme.muted}>
+                      {" "}[{idx + 1}] {shortText(item.text, 90)} ({unresolvedHint(item)}) — open {idx + 1} | retry {idx + 1} | o{idx + 1} | r{idx + 1}
+                    </Text>
+                  </Box>
                 ))}
                 <Text color={theme.muted}>Tip: press 1-3 to open/retry an item quickly.</Text>
               </Box>
-            ) : null}
+            ) : (
+              <Box marginTop={1}>
+                <StatusBadge label="OK" tone="ok" />
+                <Text color={theme.muted}> no open items.</Text>
+              </Box>
+            )}
           </FramedBlock>
         </>
       )}
@@ -2073,21 +2318,43 @@ function HatchRuntime(): JSX.Element {
                 <Text key={x.id} color={x.status === "FAILED" ? theme.error : x.status === "RUNNING" ? theme.accent : theme.text}>
                   [{shortTime(x.createdAt)}] {x.action} {x.status}
                 </Text>
-              )) : <Text color={theme.muted}>no queued actions</Text>}
+              )) : (
+                <Box>
+                  <StatusBadge label="SKIP" tone="skip" />
+                  <Text color={theme.muted}> no queued actions</Text>
+                </Box>
+              )}
               <Text color={theme.accent}>logs</Text>
               {recentLogs.length ? recentLogs.map((x, idx) => (
                 <Text key={`l-${idx}`} color={logLevelColor(x.level)}>
                   [{shortTime(x.at)}] {logLevelGlyph(x.level)} {x.message}
                 </Text>
-              )) : <Text color={theme.muted}>no runtime logs</Text>}
+              )) : (
+                <Box>
+                  <StatusBadge label="SKIP" tone="skip" />
+                  <Text color={theme.muted}> no runtime logs</Text>
+                </Box>
+              )}
               <Text color={theme.accent}>rollback</Text>
               {recentRollbacks.length ? recentRollbacks.map((x) => (
                 <Text key={`${x.at}_${x.action}`} color={theme.text}>
                   [{shortTime(x.at)}] {x.action} {x.status}
                 </Text>
-              )) : <Text color={theme.muted}>no rollback entries</Text>}
+              )) : (
+                <Box>
+                  <StatusBadge label="SKIP" tone="skip" />
+                  <Text color={theme.muted}> no rollback entries</Text>
+                </Box>
+              )}
               <Text color={theme.accent}>result</Text>
-              <Text color={resultPreview ? theme.text : theme.muted}>{resultPreview || "no results yet"}</Text>
+              {resultPreview ? (
+                <Text color={theme.text}>{resultPreview}</Text>
+              ) : (
+                <Box>
+                  <StatusBadge label="SKIP" tone="skip" />
+                  <Text color={theme.muted}> no results yet</Text>
+                </Box>
+              )}
             </>
           )}
           </FramedBlock>
@@ -2111,8 +2378,12 @@ function HatchRuntime(): JSX.Element {
         <>
           <SectionHeading label="Command palette" />
           <FramedBlock title="Palette">
-          <Text color={theme.muted}>Filter:</Text>
+          <Text color={theme.muted}>Filter (Esc to close):</Text>
           <TextInput value={paletteQuery} onChange={setPaletteQuery} focus />
+          <Box marginTop={1} />
+          <Text color={theme.muted}>
+            Showing {filteredPaletteOptions.length} of {paletteOptions.length}
+          </Text>
           <Box marginTop={1} />
           {filteredPaletteOptions.length ? (
           <Select
@@ -2136,11 +2407,12 @@ function HatchRuntime(): JSX.Element {
           <SectionHeading label="Help" />
           <FramedBlock title="Operator notes">
           <Text color={theme.text}>Workflow: describe, plan, approve, execute, review.</Text>
-          <Text color={theme.text}>Commands: /start /setup /next /open /retry /help /doctor /status /config /logs /replay /why /ai ... (o1/r1 shortcuts)</Text>
+          <Text color={theme.text}>Commands: /start /setup /next /fix /open /retry /help /doctor /status /config /logs /replay /token /why /ai ... (o1/r1 shortcuts)</Text>
           <Text color={theme.text}>Memory: say `my name is ...` and later ask `what's my name`.</Text>
           <Text color={theme.text}>Keys: Enter/y approve, n/r reject, e edit slots, d diagnostics.</Text>
           <Text color={theme.text}>Quick: g guided setup, n next step, l logs, {`1-${Math.min(9, quickActions.length)}`} run onboarding steps.</Text>
-          <Text color={theme.muted}>UI: / palette (type to filter), x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
+          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
+          <Text color={theme.muted}>Tokens: type "fix token" or "open whatsapp token" to launch the dashboard.</Text>
           </FramedBlock>
         </>
       ) : null}
