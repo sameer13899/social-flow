@@ -2171,6 +2171,13 @@ function HatchRuntime(): JSX.Element {
   const recentRollbacks = state.rollbackHistory.slice(-5);
   const resultPreview = state.results ? JSON.stringify(state.results, null, 2) : "";
   const openItems = memory.unresolved.slice(0, 3);
+  const lastRun = logItems[0];
+  const lastRunStatus: "OK" | "FAIL" | "SKIP" = lastRun ? (lastRun.success ? "OK" : "FAIL") : "SKIP";
+  const lastRunTone = lastRun ? (lastRun.success ? theme.success : theme.error) : theme.muted;
+  const lastRunBorder = lastRun ? (lastRun.success ? theme.success : theme.error) : theme.muted;
+  const lastRunTime = lastRun ? formatOpsTime(lastRun.timestamp) : "not run";
+  const lastRunAction = lastRun ? lastRun.action : "none yet";
+  const lastRunError = lastRun?.error ? shortText(lastRun.error, 140) : "";
   const attentionClear = !lastError && missingSetup.length === 0 && openItems.length === 0 && attentionOpsWorkspaces.length === 0;
   const focusTone = missingSetup.length
     ? theme.warning
@@ -2273,6 +2280,34 @@ function HatchRuntime(): JSX.Element {
         <Text color={theme.muted}> webhook </Text>
         <Text color={theme.muted}>| profile {config?.activeProfile || "default"}</Text>
       </Box>
+      <SectionHeading label="Last action" />
+      <FramedBlock title="Last action" borderColor={lastRunBorder}>
+        {lastRun ? (
+          <>
+            <Box>
+              <StatusBadge label={lastRunStatus} tone={lastRun.success ? "ok" : "fail"} />
+              <Text color={lastRunTone}> {lastRunAction}</Text>
+            </Box>
+            <Text color={theme.muted}>time {lastRunTime}</Text>
+            {lastRunError ? (
+              <Text color={theme.warning}>error: {lastRunError}</Text>
+            ) : null}
+            <Text color={theme.muted}>
+              {lastRun.success
+                ? "All good. Tip: press n for the next step."
+                : "Needs attention. Tip: type \"fix last error\" or \"replay latest\"."}
+            </Text>
+          </>
+        ) : (
+          <>
+            <Box>
+              <StatusBadge label="SKIP" tone="skip" />
+              <Text color={theme.muted}> No actions yet.</Text>
+            </Box>
+            <Text color={theme.muted}>Try: guided setup | status | social doctor</Text>
+          </>
+        )}
+      </FramedBlock>
       {attentionMode ? (
         <>
           <SectionHeading label="Attention mode" />
