@@ -722,6 +722,13 @@ function formatConfidence(confidence: number | null | undefined): string {
   return `${Math.round(Math.max(0, Math.min(1, confidence)) * 100)}%`;
 }
 
+function confidenceTier(confidence: number | null | undefined): "high" | "medium" | "low" | "unknown" {
+  if (typeof confidence !== "number" || Number.isNaN(confidence)) return "unknown";
+  if (confidence >= 0.8) return "high";
+  if (confidence >= 0.55) return "medium";
+  return "low";
+}
+
 function shouldRequireIntentConfirmation(confidence: number | undefined, action: ParsedIntent["action"]): boolean {
   if (action === "unknown") return true;
   if (action === "run_cli") return false;
@@ -2195,6 +2202,21 @@ function HatchRuntime(): JSX.Element {
   const lastRunTime = lastRun ? formatOpsTime(lastRun.timestamp) : "not run";
   const lastRunAction = lastRun ? lastRun.action : "none yet";
   const lastRunError = lastRun?.error ? shortText(lastRun.error, 140) : "";
+  const confidenceTierLabel = confidenceTier(state.currentConfidence);
+  const confidenceTone = confidenceTierLabel === "high"
+    ? theme.success
+    : confidenceTierLabel === "medium"
+      ? theme.warning
+      : confidenceTierLabel === "low"
+        ? theme.error
+        : theme.muted;
+  const confidenceHumanLabel = confidenceTierLabel === "high"
+    ? "High"
+    : confidenceTierLabel === "medium"
+      ? "Medium"
+      : confidenceTierLabel === "low"
+        ? "Low"
+        : "Unknown";
   const nextGuideCommand = missingSetup.length > 0 || authIssue
     ? "guided setup"
     : lastError
@@ -2331,6 +2353,7 @@ function HatchRuntime(): JSX.Element {
               <Text color={lastRunTone}> {lastRunAction}</Text>
             </Box>
             <Text color={theme.muted}>time {lastRunTime}</Text>
+            <Text color={confidenceTone}>confidence {confidenceHumanLabel} ({confidenceLabel})</Text>
             {lastRunError ? (
               <Text color={theme.warning}>error: {lastRunError}</Text>
             ) : null}
@@ -2346,6 +2369,7 @@ function HatchRuntime(): JSX.Element {
               <StatusBadge label="SKIP" tone="skip" />
               <Text color={theme.muted}> No actions yet.</Text>
             </Box>
+            <Text color={confidenceTone}>confidence {confidenceHumanLabel} ({confidenceLabel})</Text>
             <Text color={theme.muted}>Try: guided setup | status | social doctor</Text>
           </>
         )}
