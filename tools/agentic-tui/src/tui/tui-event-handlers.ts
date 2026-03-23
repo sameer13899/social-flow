@@ -9,6 +9,11 @@ export interface ShortcutHandlers {
   onReject: () => void;
   onToggleRail: () => void;
   onPaletteToggle: () => void;
+  onGuide: () => void;
+  onNextAction: () => void;
+  onLogs: () => void;
+  onOpenItem: (index: number) => void;
+  onQuickAction: (index: number) => void;
   onConfirm: () => void;
   onReplayUp: () => void;
   onReplayDown: () => void;
@@ -18,6 +23,7 @@ export interface ShortcutHandlers {
 export interface ShortcutContext {
   phase: AppPhase;
   hasDraftText: boolean;
+  openItemsCount?: number;
 }
 
 function isApprovalPhase(phase: AppPhase): boolean {
@@ -63,7 +69,15 @@ export function handleShortcut(
     handlers.onApprove();
     return true;
   }
+  if (input === "y" && allowSingleKey && phase === "APPROVAL") {
+    handlers.onApprove();
+    return true;
+  }
   if (input === "r" && allowSingleKey && (isApprovalPhase(phase) || phase === "EDIT_SLOTS")) {
+    handlers.onReject();
+    return true;
+  }
+  if (input === "n" && allowSingleKey && phase === "APPROVAL") {
     handlers.onReject();
     return true;
   }
@@ -73,6 +87,28 @@ export function handleShortcut(
   }
   if (input === "/" && allowSingleKey && phase === "INPUT") {
     handlers.onPaletteToggle();
+    return true;
+  }
+  if (input === "g" && allowSingleKey && phase === "INPUT") {
+    handlers.onGuide();
+    return true;
+  }
+  if (input === "n" && allowSingleKey && phase === "INPUT") {
+    handlers.onNextAction();
+    return true;
+  }
+  if (input === "l" && allowSingleKey && phase === "INPUT") {
+    handlers.onLogs();
+    return true;
+  }
+  if (allowSingleKey && phase === "INPUT" && !hasReplaySuggestions && /^[1-9]$/.test(input)) {
+    const index = Number(input) - 1;
+    const openCount = Math.max(0, Number(context.openItemsCount || 0));
+    if (openCount > 0 && index < openCount) {
+      handlers.onOpenItem(index);
+      return true;
+    }
+    handlers.onQuickAction(index);
     return true;
   }
   if (hasReplaySuggestions && key.upArrow) {
@@ -89,4 +125,3 @@ export function handleShortcut(
   }
   return false;
 }
-

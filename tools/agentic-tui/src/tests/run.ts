@@ -1,5 +1,6 @@
 import { actionBarTests } from "../tui/action-bar.test.js";
 import { commandAssistTests } from "../tui/command-assist.test.js";
+import { commandHandlerTests } from "../tui/tui-command-handlers.test.js";
 import { domainSkillTests } from "../tui/domain-skills.test.js";
 import { shortcutHandlerTests } from "../tui/tui-event-handlers.test.js";
 import { sessionActionTests } from "../tui/tui-session-actions.test.js";
@@ -11,6 +12,7 @@ async function run() {
     ...parserIntentTests,
     ...actionBarTests,
     ...commandAssistTests,
+    ...commandHandlerTests,
     ...domainSkillTests,
     ...registryExecutorTests,
     ...shortcutHandlerTests,

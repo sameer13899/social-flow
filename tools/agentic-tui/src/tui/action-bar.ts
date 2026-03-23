@@ -5,6 +5,9 @@ export type ActionBarState = {
   hasIntent: boolean;
   hasReplaySuggestions?: boolean;
   verboseMode?: boolean;
+  hasLastError?: boolean;
+  hasOpenItems?: boolean;
+  hasSetupGap?: boolean;
 };
 
 export function isApprovalPhase(phase: AppPhase): boolean {
@@ -20,7 +23,7 @@ export function buildActionBarHint(state: ActionBarState): string {
   }
 
   if (state.phase === "APPROVAL" || state.phase === "EDIT_SLOTS") {
-    return `pending action: a approve | r reject | e edit slots | Enter confirm${replayHint}${verboseHint}`;
+    return `pending action: Enter/y approve | n/r reject | e edit slots${replayHint}${verboseHint}`;
   }
 
   if (state.phase === "EXECUTING") {
@@ -31,5 +34,14 @@ export function buildActionBarHint(state: ActionBarState): string {
     return `Enter continue | / palette | ? help${verboseHint}`;
   }
 
+  if (state.hasSetupGap) {
+    return `try: guided setup | status | /help${replayHint}${verboseHint}`;
+  }
+  if (state.hasLastError) {
+    return `try: fix last error | logs | replay latest | /help${replayHint}${verboseHint}`;
+  }
+  if (state.hasOpenItems) {
+    return `try: open 1 | retry 1 | status | /help${replayHint}${verboseHint}`;
+  }
   return `try: ask naturally | status | doctor | waba setup | /help | /ai <intent>${replayHint}${verboseHint}`;
 }
