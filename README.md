@@ -42,6 +42,7 @@ social status
 social status --profiles
 social config
 social accounts summary
+social accounts check --only needs-setup
 social accounts switch <name>
 social profile get --fields id,name
 social post create --message "Hello team" --page-id PAGE_ID

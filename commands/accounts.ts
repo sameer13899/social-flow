@@ -55,6 +55,47 @@ function formatActivity(value) {
   return parsed.toISOString().replace('T', ' ').slice(0, 16);
 }
 
+function csvIds(value) {
+  return String(value || '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function normalizeCheckFilter(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || raw === 'all') return 'all';
+  if (['ready', 'ok'].includes(raw)) return 'ready';
+  if (['needs-setup', 'setup', 'incomplete'].includes(raw)) return 'needs-setup';
+  if (['missing-access', 'no-access', 'access-missing', 'access'].includes(raw)) return 'missing-access';
+  if (['attention', 'blocked', 'blockers', 'needs-attention'].includes(raw)) return 'needs-attention';
+  return 'all';
+}
+
+function nextStepForReadiness(readiness) {
+  if (!readiness.anyTokenConfigured) return 'Run setup (connect access)';
+  if (!readiness.onboardingCompleted) return 'Run setup (finish steps)';
+  if (!readiness.appCredentialsConfigured) return 'Add app login';
+  if (!readiness.ok) return 'Check setup';
+  return 'All clear';
+}
+
+function passesCheckFilter(readiness, filter) {
+  if (filter === 'ready') {
+    return readiness.ok && readiness.anyTokenConfigured && readiness.onboardingCompleted;
+  }
+  if (filter === 'needs-setup') {
+    return !readiness.onboardingCompleted || !readiness.anyTokenConfigured || !readiness.ok;
+  }
+  if (filter === 'missing-access') {
+    return !readiness.anyTokenConfigured;
+  }
+  if (filter === 'needs-attention') {
+    return readiness.blockers.length > 0;
+  }
+  return true;
+}
+
 function withProfile(profile, fn) {
   config.useProfile(profile);
   try {
@@ -168,6 +209,65 @@ function registerAccountsCommands(program) {
     });
 
   accounts
+    .command('check')
+    .description('Quick check across all workspaces')
+    .option('--only <filter>', 'Filter: all|ready|needs-setup|missing-access|needs-attention', 'all')
+    .option('--workspaces <names>', 'Comma-separated workspace names (default: all)')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      const filter = normalizeCheckFilter(options.only);
+      const active = config.getActiveProfile();
+      const list = csvIds(options.workspaces);
+      const profiles = list.length ? list : config.listProfiles();
+
+      if (!profiles.length) {
+        console.log(chalk.yellow('! No workspaces found. Add one with: social accounts add <name>'));
+        console.log('');
+        return;
+      }
+
+      const snapshots = profiles.map((profile) => {
+        const readiness = withProfile(profile, () => buildReadinessReport());
+        return {
+          profile,
+          active: profile === active,
+          readiness,
+          nextStep: nextStepForReadiness(readiness)
+        };
+      }).filter((entry) => passesCheckFilter(entry.readiness, filter));
+
+      if (options.json) {
+        console.log(JSON.stringify({ active, filter, workspaces: snapshots }, null, 2));
+        return;
+      }
+
+      const rows = snapshots.map((s) => {
+        const readyBadge = s.readiness.ok ? formatBadge('READY', { tone: 'success' }) : formatBadge('SETUP', { tone: 'warn' });
+        const tokenBadge = s.readiness.anyTokenConfigured
+          ? formatBadge('ACCESS', { tone: 'success' })
+          : formatBadge('ACCESS?', { tone: 'warn' });
+        const onboardingBadge = s.readiness.onboardingCompleted
+          ? formatBadge('SETUP', { tone: 'success' })
+          : formatBadge('SETUP?', { tone: 'warn' });
+        const appBadge = s.readiness.appCredentialsConfigured
+          ? formatBadge('APP', { tone: 'success' })
+          : formatBadge('APP?', { tone: 'warn' });
+        const nextText = chalk.yellow(`next: ${s.nextStep}`);
+        const prefix = s.active ? chalk.green('*') : ' ';
+        return `${prefix} ${chalk.cyan(s.profile)}  ${readyBadge} ${tokenBadge} ${onboardingBadge} ${appBadge}  ${nextText}`;
+      });
+
+      console.log('');
+      console.log(renderPanel({
+        title: ' Workspace Check ',
+        rows,
+        minWidth: 96,
+        borderColor: (value) => chalk.blue(value)
+      }));
+      console.log('');
+    });
+
+  accounts
     .command('add <name>')
     .description('Create a new profile (e.g. client1)')
     .action((name) => {
@@ -230,5 +330,8 @@ module.exports = registerAccountsCommands;
 (registerAccountsCommands)._private = {
   summarizeActionLog,
   truncateText,
-  formatActivity
+  formatActivity,
+  normalizeCheckFilter,
+  nextStepForReadiness,
+  passesCheckFilter
 };

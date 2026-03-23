@@ -22,6 +22,7 @@ social status
 ```bash
 social hatch
 social accounts summary
+social accounts check --only needs-setup
 social status --profiles
 social profile get --fields id,name
 social ops center

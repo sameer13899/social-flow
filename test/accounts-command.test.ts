@@ -45,5 +45,31 @@ module.exports = [
       const out = accounts._private.formatActivity('2026-03-23T10:00:00.000Z');
       assert.equal(out.startsWith('2026-03-23'), true);
     }
+  },
+  {
+    name: 'accounts normalizeCheckFilter maps aliases',
+    fn: () => {
+      assert.equal(accounts._private.normalizeCheckFilter('ready'), 'ready');
+      assert.equal(accounts._private.normalizeCheckFilter('needs-setup'), 'needs-setup');
+      assert.equal(accounts._private.normalizeCheckFilter('missing-access'), 'missing-access');
+      assert.equal(accounts._private.normalizeCheckFilter('attention'), 'needs-attention');
+      assert.equal(accounts._private.normalizeCheckFilter('unknown'), 'all');
+    }
+  },
+  {
+    name: 'accounts next step favors access first',
+    fn: () => {
+      const readiness = { anyTokenConfigured: false, onboardingCompleted: false, appCredentialsConfigured: false, ok: false };
+      const next = accounts._private.nextStepForReadiness(readiness);
+      assert.equal(next.includes('Run setup'), true);
+    }
+  },
+  {
+    name: 'accounts check filters ready workspaces',
+    fn: () => {
+      const readiness = { ok: true, anyTokenConfigured: true, onboardingCompleted: true, blockers: [] };
+      assert.equal(accounts._private.passesCheckFilter(readiness, 'ready'), true);
+      assert.equal(accounts._private.passesCheckFilter(readiness, 'missing-access'), false);
+    }
   }
 ];
