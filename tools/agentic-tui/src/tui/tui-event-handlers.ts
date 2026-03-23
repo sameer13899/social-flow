@@ -20,6 +20,11 @@ export interface ShortcutHandlers {
   onToggleQuietMode: () => void;
   onHelpFix: () => void;
   onToggleGuideOverlay: () => void;
+  onToggleSafeMode: () => void;
+  onPanicSummary: () => void;
+  onDiagnosticPack: () => void;
+  onToggleGuidedMenu: () => void;
+  onAdvanceOnboarding: () => void;
   onGuide: () => void;
   onNextAction: () => void;
   onLogs: () => void;
@@ -138,6 +143,26 @@ export function handleShortcut(
   }
   if (input === "i" && allowSingleKey && phase === "INPUT") {
     handlers.onToggleGuideOverlay();
+    return true;
+  }
+  if (input === "m" && allowSingleKey && phase === "INPUT") {
+    handlers.onToggleSafeMode();
+    return true;
+  }
+  if (input === "p" && allowSingleKey && phase === "INPUT") {
+    handlers.onPanicSummary();
+    return true;
+  }
+  if (input === "k" && allowSingleKey && phase === "INPUT") {
+    handlers.onDiagnosticPack();
+    return true;
+  }
+  if (input === "w" && allowSingleKey && phase === "INPUT") {
+    handlers.onToggleGuidedMenu();
+    return true;
+  }
+  if (input === "t" && allowSingleKey && phase === "INPUT") {
+    handlers.onAdvanceOnboarding();
     return true;
   }
   if (input === "/" && allowSingleKey && phase === "INPUT") {

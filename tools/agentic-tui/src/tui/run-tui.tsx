@@ -247,6 +247,24 @@ function buildOpsNextCommand(row: OpsRow): string {
 
 type QuickAction = { label: string; command: string };
 
+const onboardingSteps: Array<{ title: string; detail: string; action: string }> = [
+  {
+    title: "Welcome to Social Flow",
+    detail: "This guide helps you get started without any technical setup.",
+    action: "Press w to choose a task, or type guided setup."
+  },
+  {
+    title: "Connect your account",
+    detail: "We will walk you through tokens and WhatsApp setup step-by-step.",
+    action: "Press h for help fixing issues or g for guided setup."
+  },
+  {
+    title: "Run your first action",
+    detail: "Pick a simple task, then watch the status and next steps.",
+    action: "Try: status | social doctor"
+  }
+];
+
 function dedupeQuickActions(actions: QuickAction[]): QuickAction[] {
   const seen = new Set<string>();
   return actions.filter((item) => {
@@ -779,6 +797,11 @@ function HatchRuntime(): JSX.Element {
   const [attentionMode, setAttentionMode] = useState(false);
   const [quietMode, setQuietMode] = useState(false);
   const [showGuideOverlay, setShowGuideOverlay] = useState(false);
+  const [showGuidedMenu, setShowGuidedMenu] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingSeen, setOnboardingSeen] = useState(false);
+  const [safeMode, setSafeMode] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState("default");
   const [replaySuggestionIndex, setReplaySuggestionIndex] = useState(0);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
@@ -810,6 +833,7 @@ function HatchRuntime(): JSX.Element {
     error: null,
     data: null
   });
+  const [opsUpdatedAt, setOpsUpdatedAt] = useState<string>("");
   const [logsState, setLogsState] = useState<LoadState<PersistedLog[]>>({
     loading: true,
     error: null,
@@ -907,6 +931,31 @@ function HatchRuntime(): JSX.Element {
     setShowGuideOverlay((prev) => !prev);
   }, []);
 
+  const toggleSafeMode = useCallback(() => {
+    setSafeMode((prev) => {
+      const next = !prev;
+      addTurn("system", next ? "Safe mode on: high-risk actions are blocked." : "Safe mode off.");
+      return next;
+    });
+  }, [addTurn]);
+
+  const toggleGuidedMenu = useCallback(() => {
+    setShowGuidedMenu((prev) => !prev);
+  }, []);
+
+  const advanceOnboarding = useCallback(() => {
+    setShowOnboarding((prev) => (prev ? prev : true));
+    setOnboardingStep((prev) => {
+      const next = prev + 1;
+      if (next >= onboardingSteps.length) {
+        setShowOnboarding(false);
+        setOnboardingSeen(true);
+        return 0;
+      }
+      return next;
+    });
+  }, []);
+
   const cycleFocusedWorkspace = useCallback((direction: "prev" | "next", rows: OpsRow[]) => {
     if (!rows.length) return;
     const currentIndex = focusedWorkspace
@@ -961,6 +1010,7 @@ function HatchRuntime(): JSX.Element {
     try {
       const snapshot = await loadOpsSnapshot(profiles, activeWorkspace);
       setOpsState({ loading: false, error: null, data: snapshot });
+      setOpsUpdatedAt(new Date().toISOString());
     } catch (err) {
       setOpsState({ loading: false, error: String((err as Error)?.message || err), data: null });
     }
@@ -1072,6 +1122,13 @@ function HatchRuntime(): JSX.Element {
     memory.sessionId,
     memory.unresolved
   ]);
+
+  useEffect(() => {
+    if (onboardingSeen || showOnboarding) return;
+    if (!memory.loaded || logsState.loading) return;
+    const hasHistory = chatTurns.length > 2 || logsState.data.length > 0;
+    if (!hasHistory) setShowOnboarding(true);
+  }, [chatTurns.length, logsState.data.length, logsState.loading, memory.loaded, onboardingSeen, showOnboarding]);
 
   const runExecution = useCallback(async (intentOverride?: ParsedIntent): Promise<void> => {
     const intent = intentOverride || state.currentIntent;
@@ -1865,6 +1922,10 @@ function HatchRuntime(): JSX.Element {
         await streamAssistantTurn("Missing required slots. Press e and provide key=value.");
         return;
       }
+      if (safeMode && state.currentRisk === "HIGH") {
+        await streamAssistantTurn("Safe mode is on. High-risk actions are blocked. Press m to disable safe mode.");
+        return;
+      }
       if (state.currentRisk === "HIGH") {
         dispatch({ type: "HIGH_CONFIRM_STEP_1" });
         await streamAssistantTurn("High-risk action: provide approval reason, then press Enter.");
@@ -1876,6 +1937,10 @@ function HatchRuntime(): JSX.Element {
     }
 
     if (state.phase === "HIGH_RISK_APPROVAL") {
+      if (safeMode) {
+        await streamAssistantTurn("Safe mode is on. High-risk actions are blocked. Press m to disable safe mode.");
+        return;
+      }
       if (!state.approvalReason.trim()) {
         await streamAssistantTurn("Approval reason required for high-risk action.");
         return;
@@ -1888,7 +1953,7 @@ function HatchRuntime(): JSX.Element {
     if (state.phase === "RESULT" || state.phase === "REJECTED") {
       dispatch({ type: "RESET_FLOW" });
     }
-  }, [parseAndQueueIntent, runExecution, state, streamAssistantTurn]);
+  }, [parseAndQueueIntent, runExecution, safeMode, state, streamAssistantTurn]);
 
   const replaySuggestions = useMemo(() => {
     if (state.phase !== "INPUT") return [] as PersistedLog[];
@@ -1910,6 +1975,12 @@ function HatchRuntime(): JSX.Element {
       if (key.escape || input === "/" || input === "q") {
         setShowPalette(false);
         setPaletteQuery("");
+      }
+      return;
+    }
+    if (showGuidedMenu) {
+      if (key.escape || input === "w" || input === "q") {
+        setShowGuidedMenu(false);
       }
       return;
     }
@@ -1973,6 +2044,7 @@ function HatchRuntime(): JSX.Element {
       onToggleRail: () => setRightRailCollapsed((prev) => !prev),
       onToggleBoardFilter: () => toggleBoardFilter(),
       onToggleAttentionMode: () => toggleAttentionMode(),
+      onToggleSafeMode: () => toggleSafeMode(),
       onFocusPrev: () => cycleFocusedWorkspace("prev", opsFocusRows),
       onFocusNext: () => cycleFocusedWorkspace("next", opsFocusRows),
       onFocusRun: () => {
@@ -2029,6 +2101,10 @@ function HatchRuntime(): JSX.Element {
         void parseAndQueueIntent(command);
       },
       onToggleGuideOverlay: () => toggleGuideOverlay(),
+      onPanicSummary: () => addTurn("assistant", buildPanicSummary()),
+      onDiagnosticPack: () => addTurn("assistant", buildDiagnosticPack()),
+      onToggleGuidedMenu: () => toggleGuidedMenu(),
+      onAdvanceOnboarding: () => advanceOnboarding(),
       onPaletteToggle: () => {
         setPaletteQuery("");
         setShowPalette(true);
@@ -2202,6 +2278,8 @@ function HatchRuntime(): JSX.Element {
   const lastRunTime = lastRun ? formatOpsTime(lastRun.timestamp) : "not run";
   const lastRunAction = lastRun ? lastRun.action : "none yet";
   const lastRunError = lastRun?.error ? shortText(lastRun.error, 140) : "";
+  const safeModeLabel = safeMode ? "on" : "off";
+  const opsUpdatedLabel = opsUpdatedAt ? formatOpsTime(opsUpdatedAt) : "never";
   const confidenceTierLabel = confidenceTier(state.currentConfidence);
   const confidenceTone = confidenceTierLabel === "high"
     ? theme.success
@@ -2243,6 +2321,53 @@ function HatchRuntime(): JSX.Element {
           ? "Some workspaces still need attention."
           : "No blockers right now.";
   const attentionClear = !lastError && missingSetup.length === 0 && openItems.length === 0 && attentionOpsWorkspaces.length === 0;
+  const onboardingContent = onboardingSteps[Math.min(onboardingStep, onboardingSteps.length - 1)];
+  const guidedMenuOptions = useMemo(() => {
+    const options = [
+      { label: "Guided setup (recommended)", value: "guided setup" },
+      { label: "Check status", value: "status" },
+      { label: "Run doctor", value: "social doctor" },
+      { label: "Next step", value: nextGuideCommand },
+      focusedOpsWorkspace
+        ? { label: `Review approvals (${focusedOpsWorkspace.name})`, value: focusedApprovalsCommand }
+        : null,
+      focusedOpsWorkspace
+        ? { label: `Review alerts (${focusedOpsWorkspace.name})`, value: focusedAlertsCommand }
+        : null,
+      { label: "Send a WhatsApp message", value: "send message" },
+      { label: "Create a post", value: "create post" }
+    ].filter((item): item is { label: string; value: string } => Boolean(item && item.value));
+
+    const seen = new Set<string>();
+    return options.filter((item) => {
+      if (seen.has(item.value)) return false;
+      seen.add(item.value);
+      return true;
+    });
+  }, [focusedAlertsCommand, focusedApprovalsCommand, focusedOpsWorkspace, nextGuideCommand]);
+  const hotkeyTips = useMemo(() => {
+    const tips: string[] = [];
+    if (missingSetup.length > 0 || authIssue || lastError) tips.push("h help fix");
+    tips.push(showGuideOverlay ? "i hide guide" : "i show guide");
+    tips.push(showGuidedMenu ? "w close menu" : "w menu");
+    tips.push(showOnboarding ? "t next tutorial" : "t tutorial");
+    tips.push(safeMode ? "m safe mode on" : "m safe mode off");
+    if (openItems.length > 0) tips.push(`1-${Math.min(3, openItems.length)} open item`);
+    if (focusedOpsWorkspace) tips.push("f run focus");
+    if (opsWorkspaces.length > 0) tips.push("b board");
+    return tips.slice(0, 5);
+  }, [
+    authIssue,
+    focusedOpsWorkspace,
+    lastError,
+    missingSetup.length,
+    openItems.length,
+    opsWorkspaces.length,
+    safeMode,
+    showGuideOverlay,
+    showGuidedMenu,
+    showOnboarding
+  ]);
   const focusTone = missingSetup.length
     ? theme.warning
     : lastError
@@ -2299,6 +2424,94 @@ function HatchRuntime(): JSX.Element {
   const lastActionLabel = recentFail
     ? `${recentFail.action}${recentFail.error ? ` — ${shortText(recentFail.error, 90)}` : ""}`
     : "";
+
+  const buildPanicSummary = useCallback(() => {
+    const lines = [
+      "PANIC SUMMARY",
+      `time: ${formatOpsTime(new Date().toISOString())}`,
+      `profile: ${config?.activeProfile || "default"}`,
+      `safe mode: ${safeModeLabel} | attention: ${attentionMode ? "on" : "off"} | quiet: ${quietMode ? "on" : "off"}`,
+      `last action: ${lastRunAction} (${lastRunStatus}) at ${lastRunTime}`,
+      `error: ${lastRunError || "none"}`,
+      `open items: ${unresolvedCount}`,
+      `ops attention: ${opsNeedsAttention}/${opsWorkspaces.length}`,
+      `ops updated: ${opsUpdatedLabel}`
+    ];
+    const recent = logItems.slice(0, 3).map((item) => (
+      `${item.success ? "OK" : "FAIL"} ${item.action} @ ${shortTime(item.timestamp)}${item.error ? ` — ${shortText(item.error, 80)}` : ""}`
+    ));
+    if (recent.length) {
+      lines.push("recent logs:");
+      lines.push(...recent);
+    }
+    return lines.join("\n");
+  }, [
+    attentionMode,
+    config?.activeProfile,
+    lastRunAction,
+    lastRunError,
+    lastRunStatus,
+    lastRunTime,
+    logItems,
+    opsNeedsAttention,
+    opsUpdatedLabel,
+    opsWorkspaces.length,
+    quietMode,
+    safeModeLabel,
+    unresolvedCount
+  ]);
+
+  const buildDiagnosticPack = useCallback(() => {
+    const lines = [
+      "SOCIAL FLOW DIAGNOSTIC PACK",
+      `generated: ${formatOpsTime(new Date().toISOString())}`,
+      `profile: ${config?.activeProfile || "default"}`,
+      `token: ${tokenOk ? "ok" : "missing"} | waba: ${wabaOk ? "ok" : "missing"} | webhook: ${webhookBadge}`,
+      `safe mode: ${safeModeLabel} | attention: ${attentionMode ? "on" : "off"} | quiet: ${quietMode ? "on" : "off"}`,
+      `last action: ${lastRunAction} (${lastRunStatus}) at ${lastRunTime}`,
+      `last error: ${lastRunError || "none"}`,
+      `setup gaps: ${missingSetup.length}`,
+      `open items: ${unresolvedCount}`,
+      `ops updated: ${opsUpdatedLabel}`,
+      `ops attention: ${opsNeedsAttention}/${opsWorkspaces.length}`
+    ];
+    const opsRows = opsWorkspaces.slice(0, 5).map((row) => (
+      `- ${row.name}: approvals=${row.approvalsOpen} alerts=${row.alertsOpen} last_check=${row.lastMorningRunDate || "not run"} next=${row.nextAction}`
+    ));
+    if (opsRows.length) {
+      lines.push("ops workspaces:");
+      lines.push(...opsRows);
+      if (opsWorkspaces.length > opsRows.length) {
+        lines.push(`...and ${opsWorkspaces.length - opsRows.length} more`);
+      }
+    }
+    const recent = logItems.slice(0, 5).map((item) => (
+      `${item.success ? "OK" : "FAIL"} ${item.action} @ ${shortTime(item.timestamp)}${item.error ? ` — ${shortText(item.error, 120)}` : ""}`
+    ));
+    if (recent.length) {
+      lines.push("recent logs:");
+      lines.push(...recent);
+    }
+    return lines.join("\n");
+  }, [
+    attentionMode,
+    config?.activeProfile,
+    lastRunAction,
+    lastRunError,
+    lastRunStatus,
+    lastRunTime,
+    logItems,
+    missingSetup.length,
+    opsNeedsAttention,
+    opsUpdatedLabel,
+    opsWorkspaces,
+    quietMode,
+    safeModeLabel,
+    tokenOk,
+    unresolvedCount,
+    wabaOk,
+    webhookBadge
+  ]);
   const paletteOptions = [
     ...quickActions.map((item) => ({ label: `Quick: ${item.label}`, value: item.command, show: true })),
     ...setupFixActions.map((item) => ({ label: `Setup: ${item.label}`, value: item.command, show: true })),
@@ -2386,6 +2599,18 @@ function HatchRuntime(): JSX.Element {
           </FramedBlock>
         </>
       ) : null}
+      {showOnboarding ? (
+        <>
+          <SectionHeading label="Getting started" />
+          <FramedBlock title={`Step ${onboardingStep + 1}/${onboardingSteps.length}`} borderColor={theme.accent}>
+            <Text color={theme.text}>{onboardingContent.title}</Text>
+            <Text color={theme.muted}>{onboardingContent.detail}</Text>
+            <Text color={theme.accent}>{onboardingContent.action}</Text>
+            <Text color={theme.muted}>Press t to continue.</Text>
+            <Text color={theme.muted}>Tip: press w for the guided menu.</Text>
+          </FramedBlock>
+        </>
+      ) : null}
       {attentionMode ? (
         <>
           <SectionHeading label="Attention mode" />
@@ -2401,9 +2626,9 @@ function HatchRuntime(): JSX.Element {
             <Text color={theme.text}>
               profile {config?.activeProfile || "default"} | session {shortText(memory.sessionId, 22)} | connected {connectedCount}/3 | ai {aiLabel}
             </Text>
-            <Text color={phaseTone}>
-              phase {state.phase.toLowerCase()} | risk {(state.currentRisk || "LOW").toLowerCase()} | confidence {confidenceLabel} | account {selectedAccount}
-            </Text>
+        <Text color={phaseTone}>
+          phase {state.phase.toLowerCase()} | risk {(state.currentRisk || "LOW").toLowerCase()} | confidence {confidenceLabel} | safe {safeModeLabel} | account {selectedAccount}
+        </Text>
             <Text color={theme.muted}>
               industry {industryLabel} | memory {memoryLabel} | open items {unresolvedCount} | runtime {runtimeLabel}
             </Text>
@@ -2489,7 +2714,7 @@ function HatchRuntime(): JSX.Element {
               opsWorkspaces.length ? (
                 <Box flexDirection="column">
                   <Text color={theme.muted}>
-                    workspaces {opsWorkspaces.length} | approvals {opsApprovalsOpen} | alerts {opsAlertsOpen} | needs attention {opsNeedsAttention}
+                    workspaces {opsWorkspaces.length} | approvals {opsApprovalsOpen} | alerts {opsAlertsOpen} | needs attention {opsNeedsAttention} | updated {opsUpdatedLabel}
                   </Text>
                   <Text color={theme.muted}>
                     {attentionMode
@@ -2610,18 +2835,17 @@ function HatchRuntime(): JSX.Element {
               <Box marginTop={1} flexDirection="column">
                 <Text color={theme.accent}>Suggested actions</Text>
                 {focusActions.map((action) => (
-                  <Text key={action.command} color={theme.muted}>
-                    - {action.label}: {action.command}
-                  </Text>
+                  <Box key={action.command} marginTop={1} flexDirection="column">
+                    <Text color={theme.text}>{action.label}</Text>
+                    <Text color={theme.muted}>copy: {action.command}</Text>
+                  </Box>
                 ))}
               </Box>
             ) : null}
             {nextAction ? (
-              <Box marginTop={1}>
-                <Text color={theme.text}>Next action: </Text>
-                <Text color={theme.text}>{nextAction.label}</Text>
-                <Text color={theme.muted}> — </Text>
-                <Text color={theme.accent}>{nextAction.command}</Text>
+              <Box marginTop={1} flexDirection="column">
+                <Text color={theme.text}>Next action: {nextAction.label}</Text>
+                <Text color={theme.muted}>copy: {nextAction.command}</Text>
               </Box>
             ) : null}
             <Text color={theme.muted}>Tip: press n to run the next action, or l to show logs.</Text>
@@ -2630,19 +2854,15 @@ function HatchRuntime(): JSX.Element {
           <SectionHeading label="Quick actions" />
           <FramedBlock title="Quick actions">
             {quickActions.map((item, idx) => (
-              <Box key={item.command}>
-                <Text color={theme.muted}>{`[${idx + 1}] `}</Text>
-                <Text color={theme.text}>{item.label}</Text>
-                <Text color={theme.muted}> — </Text>
-                <Text color={theme.accent}>{item.command}</Text>
+              <Box key={item.command} marginTop={1} flexDirection="column">
+                <Text color={theme.text}>{`[${idx + 1}] ${item.label}`}</Text>
+                <Text color={theme.muted}>copy: {item.command}</Text>
               </Box>
             ))}
             {nextAction ? (
-              <Box marginTop={1}>
-                <Text color={theme.text}>Next step: </Text>
-                <Text color={theme.text}>{nextAction.label}</Text>
-                <Text color={theme.muted}> — </Text>
-                <Text color={theme.accent}>{nextAction.command}</Text>
+              <Box marginTop={1} flexDirection="column">
+                <Text color={theme.text}>Next step: {nextAction.label}</Text>
+                <Text color={theme.muted}>copy: {nextAction.command}</Text>
               </Box>
             ) : null}
             <Text color={theme.muted}>Tip: copy/paste any line above into chat to run it.</Text>
@@ -2946,6 +3166,29 @@ function HatchRuntime(): JSX.Element {
         </>
       ) : null}
 
+      {showGuidedMenu ? (
+        <>
+          <SectionHeading label="What do you want to do?" />
+          <FramedBlock title="Guided menu">
+            <Text color={theme.muted}>Pick one option and I will guide you.</Text>
+            <Box marginTop={1} />
+            {guidedMenuOptions.length ? (
+              <Select
+                options={guidedMenuOptions}
+                onChange={(value) => {
+                  setShowGuidedMenu(false);
+                  dispatch({ type: "SET_INPUT", value });
+                  void parseAndQueueIntent(value);
+                }}
+              />
+            ) : (
+              <Text color={theme.muted}>No options available yet. Press w to close.</Text>
+            )}
+            <Text color={theme.muted}>Tip: press w or Esc to close.</Text>
+          </FramedBlock>
+        </>
+      ) : null}
+
       {showHelp ? (
         <>
           <SectionHeading label="Help" />
@@ -2955,7 +3198,7 @@ function HatchRuntime(): JSX.Element {
           <Text color={theme.text}>Memory: say `my name is ...` and later ask `what's my name`.</Text>
           <Text color={theme.text}>Keys: Enter/y approve, n/r reject, e edit slots, d diagnostics.</Text>
           <Text color={theme.text}>Quick: g guided setup, n next step, l logs, {`1-${Math.min(9, quickActions.length)}`} run onboarding steps.</Text>
-          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), b board filter, c attention mode, v quiet mode, i next-step guide, [ ] cycle focus, f run focus, s switch workspace, a approvals, e alerts, h help fix, x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
+          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), w menu, t tutorial, b board filter, c attention mode, v quiet mode, i next-step guide, m safe mode, p panic, k diagnostic pack, [ ] cycle focus, f run focus, s switch workspace, a approvals, e alerts, h help fix, x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
           <Text color={theme.muted}>Tokens: type "fix token" or "open whatsapp token" to launch the dashboard.</Text>
           </FramedBlock>
         </>
@@ -2967,8 +3210,11 @@ function HatchRuntime(): JSX.Element {
         <TextInput value={inputValue} onChange={setInputValue} focus={!showPalette} />
       </Box>
       <Text color={state.currentRisk === "HIGH" ? riskTone : theme.accent}>{actionHint}</Text>
+      {hotkeyTips.length ? (
+        <Text color={theme.muted}>Hotkeys now: {hotkeyTips.join(" | ")}</Text>
+      ) : null}
       <Text color={theme.muted}>
-        Enter confirm | / palette (filter) | b board | c attention | v quiet | i guide | [ ] focus | f run | s switch | a approvals | e alerts | h help | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
+        Enter confirm | / palette (filter) | w menu | t tutorial | b board | c attention | v quiet | i guide | m safe | p panic | k pack | [ ] focus | f run | s switch | a approvals | e alerts | h help | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
       </Text>
     </Box>
   );
