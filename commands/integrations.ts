@@ -101,6 +101,20 @@ async function runWabaDoctor({ token, businessId, wabaId, phoneNumberId, callbac
         ok: missing.length === 0,
         detail: missing.length ? `Missing: ${missing.join(', ')}` : 'ok'
       });
+      const expiresAt = Number(debug?.data?.expires_at || 0) * 1000;
+      if (Number.isFinite(expiresAt) && expiresAt > 0) {
+        const msLeft = expiresAt - Date.now();
+        const daysLeft = Math.round(msLeft / (24 * 60 * 60 * 1000));
+        if (msLeft <= 0) {
+          checks.push({ key: 'token_expiry', ok: false, detail: 'Token expired.' });
+        } else if (daysLeft <= 7) {
+          checks.push({ key: 'token_expiry', ok: null, detail: `Token expires in ${daysLeft} day(s).` });
+        } else if (daysLeft <= 30) {
+          checks.push({ key: 'token_expiry', ok: null, detail: `Token expires in ${daysLeft} day(s).` });
+        } else {
+          checks.push({ key: 'token_expiry', ok: true, detail: `Token expires in ${daysLeft} day(s).` });
+        }
+      }
     } catch (error) {
       checks.push({ key: 'required_scopes', ok: false, detail: String(error?.message || error || '') });
     }
@@ -168,6 +182,7 @@ function formatCheckLabel(key) {
   const labels = {
     token_valid: 'Token',
     required_scopes: 'Required scopes',
+    token_expiry: 'Token expiry',
     business_id: 'Business ID',
     waba_id: 'WhatsApp Business account (WABA) ID',
     phone_access: 'Phone number access',
@@ -197,6 +212,7 @@ function normalizeMetaError(detail) {
 
 function fixForCheck(key) {
   if (key === 'token_valid') return 'Run: social auth login -a whatsapp';
+  if (key === 'token_expiry') return 'Re-auth token: social auth login -a whatsapp';
   if (key === 'required_scopes') {
     return 'Regenerate token with scopes: whatsapp_business_messaging, whatsapp_business_management (Meta App Dashboard -> WhatsApp -> API Setup).';
   }
