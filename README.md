@@ -61,6 +61,15 @@ Onboarding notes:
 - Facebook/Instagram: opens Graph Explorer to generate a token.
 - WhatsApp: opens Meta App Dashboard (WhatsApp API Setup) for token generation.
 
+## WhatsApp Send Safety
+
+`social whatsapp send` requires `--sandbox` or `--prod` (or set `SOCIAL_WABA_MODE=prod`). Sandbox mode prints the payload and never sends.
+
+Retry tuning for transient Meta failures:
+- `SOCIAL_META_RETRY_MAX` (default 3)
+- `SOCIAL_META_RETRY_BASE_MS` (default 1000)
+- `SOCIAL_META_RETRY_MAX_MS` (default 8000)
+
 ## Config Compatibility
 
 - Active state lives in `~/.social-flow/config.json`

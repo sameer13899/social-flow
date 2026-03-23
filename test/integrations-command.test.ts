@@ -38,5 +38,29 @@ module.exports = [
       assert.match(fix, /whatsapp_business_messaging/);
       assert.match(fix, /whatsapp_business_management/);
     }
+  },
+  {
+    name: 'integrations builds token expiry checks',
+    fn: () => {
+      const now = Date.UTC(2026, 2, 1);
+      const nearExpiry = integrations._private.tokenExpiryCheck(Math.floor((now + 5 * 24 * 60 * 60 * 1000) / 1000), now);
+      assert.equal(nearExpiry.ok, null);
+      assert.match(nearExpiry.detail, /5 day/);
+
+      const expired = integrations._private.tokenExpiryCheck(Math.floor((now - 5 * 60 * 1000) / 1000), now);
+      assert.equal(expired.ok, false);
+      assert.match(expired.detail, /expired/i);
+
+      const healthy = integrations._private.tokenExpiryCheck(Math.floor((now + 45 * 24 * 60 * 60 * 1000) / 1000), now);
+      assert.equal(healthy.ok, true);
+      assert.match(healthy.detail, /45 day/);
+    }
+  },
+  {
+    name: 'integrations recommends re-auth for expiring tokens',
+    fn: () => {
+      const fix = integrations._private.fixForCheck('token_expiry');
+      assert.match(fix, /auth login -a whatsapp/);
+    }
   }
 ];

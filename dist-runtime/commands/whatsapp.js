@@ -38,6 +38,18 @@ async function pickPhoneNumberId(phoneNumbers, defaultId) {
     ]);
     return String(answers.id);
 }
+function resolveSendMode(options, envMode, isTTY) {
+    const env = String(envMode || '').trim().toLowerCase();
+    if (options.prod)
+        return { mode: 'prod', needsPrompt: false };
+    if (options.sandbox)
+        return { mode: 'sandbox', needsPrompt: false };
+    if (env === 'prod' || env === 'production')
+        return { mode: 'prod', needsPrompt: false };
+    if (env === 'sandbox')
+        return { mode: 'sandbox', needsPrompt: false };
+    return { mode: '', needsPrompt: Boolean(isTTY) };
+}
 function registerWhatsAppCommands(program) {
     const whatsapp = program.command('whatsapp').alias('waba').alias('wa').description('WhatsApp Business (Cloud API)');
     whatsapp
@@ -87,19 +99,10 @@ function registerWhatsAppCommands(program) {
             console.error(chalk.red('X Invalid --type. Use: text, image'));
             process.exit(1);
         }
-        const envMode = String(process.env.SOCIAL_WABA_MODE || '').trim().toLowerCase();
-        const explicitMode = options.prod
-            ? 'prod'
-            : options.sandbox
-                ? 'sandbox'
-                : envMode === 'prod' || envMode === 'production'
-                    ? 'prod'
-                    : envMode === 'sandbox'
-                        ? 'sandbox'
-                        : '';
-        let mode = explicitMode;
+        const modeResolution = resolveSendMode(options, process.env.SOCIAL_WABA_MODE || '', process.stdout.isTTY);
+        let mode = modeResolution.mode;
         if (!mode) {
-            if (!process.stdout.isTTY) {
+            if (!modeResolution.needsPrompt) {
                 console.error(chalk.red('X Missing mode. Use --prod to send or --sandbox to preview only.'));
                 process.exit(1);
             }
@@ -115,7 +118,7 @@ function registerWhatsAppCommands(program) {
                     default: 0
                 }
             ]);
-            mode = String(answer.mode || 'sandbox');
+            mode = answer.mode === 'prod' ? 'prod' : 'sandbox';
         }
         if (mode === 'sandbox') {
             options.dryRun = true;
@@ -240,4 +243,7 @@ function registerWhatsAppCommands(program) {
         }
     });
 }
+registerWhatsAppCommands._private = {
+    resolveSendMode
+};
 module.exports = registerWhatsAppCommands;

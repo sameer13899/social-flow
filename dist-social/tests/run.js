@@ -11,7 +11,8 @@ async function loadTests() {
     const stems = [
         "intent-parser.test",
         "config.test",
-        "playwright-runtime.test"
+        "playwright-runtime.test",
+        "http-executor.test"
     ];
     const out = [];
     for (const stem of stems) {

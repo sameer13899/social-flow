@@ -47,6 +47,7 @@ async function run() {
       'ui-chrome.test',
       'onboard-command.test',
       'integrations-command.test',
+      'whatsapp-command.test',
       'readiness.test',
       'guidance.test'
     ];

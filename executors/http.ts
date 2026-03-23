@@ -73,3 +73,8 @@ export class MetaHttpExecutor {
     });
   }
 }
+
+export const _private = {
+  shouldRetry,
+  retryDelayMs
+};
