@@ -69,12 +69,12 @@ function registerStatusCommand(program) {
       ];
 
       const readinessRows = [
-        kv('Profile', chalk.cyan(readiness.activeProfile), { labelWidth: 16 }),
-        kv('Ready', readiness.ok ? formatBadge('YES', { tone: 'success' }) : formatBadge('NO', { tone: 'warn' }), { labelWidth: 16 }),
+        kv('Workspace', chalk.cyan(readiness.activeProfile), { labelWidth: 16 }),
+        kv('Ready to run', readiness.ok ? formatBadge('YES', { tone: 'success' }) : formatBadge('NO', { tone: 'warn' }), { labelWidth: 16 }),
         kv('Default API', chalk.cyan(readiness.defaultApi || 'facebook'), { labelWidth: 16 }),
-        kv('Tokens', readiness.anyTokenConfigured ? formatBadge('READY', { tone: 'success' }) : formatBadge('MISSING', { tone: 'warn' }), { labelWidth: 16 }),
-        kv('Onboarding', readiness.onboardingCompleted ? formatBadge('DONE', { tone: 'success' }) : formatBadge('PENDING', { tone: 'warn' }), { labelWidth: 16 }),
-        kv('App Credentials', readiness.appCredentialsConfigured ? formatBadge('READY', { tone: 'success' }) : formatBadge('PENDING', { tone: 'warn' }), { labelWidth: 16 })
+        kv('Access', readiness.anyTokenConfigured ? formatBadge('READY', { tone: 'success' }) : formatBadge('MISSING', { tone: 'warn' }), { labelWidth: 16 }),
+        kv('Setup', readiness.onboardingCompleted ? formatBadge('DONE', { tone: 'success' }) : formatBadge('PENDING', { tone: 'warn' }), { labelWidth: 16 }),
+        kv('App Login', readiness.appCredentialsConfigured ? formatBadge('READY', { tone: 'success' }) : formatBadge('PENDING', { tone: 'warn' }), { labelWidth: 16 })
       ];
 
       const guidance = deriveGuidanceSteps({
@@ -107,11 +107,11 @@ function registerStatusCommand(program) {
             ? formatBadge('READY', { tone: 'success' })
             : formatBadge('SETUP', { tone: 'warn' });
           const tokenBadge = item.readiness.anyTokenConfigured
-            ? formatBadge('TOKENS', { tone: 'success' })
-            : formatBadge('TOKENS?', { tone: 'warn' });
+            ? formatBadge('ACCESS', { tone: 'success' })
+            : formatBadge('ACCESS?', { tone: 'warn' });
           const onboardingBadge = item.readiness.onboardingCompleted
-            ? formatBadge('ONBOARD', { tone: 'success' })
-            : formatBadge('ONBOARD?', { tone: 'warn' });
+            ? formatBadge('SETUP', { tone: 'success' })
+            : formatBadge('SETUP?', { tone: 'warn' });
           const appBadge = item.readiness.appCredentialsConfigured
             ? formatBadge('APP', { tone: 'success' })
             : formatBadge('APP?', { tone: 'warn' });
@@ -120,10 +120,10 @@ function registerStatusCommand(program) {
         });
 
         const summaryRows = [
-          kv('Profiles', chalk.cyan(String(profilesReadiness.summary.total)), { labelWidth: 16 }),
+          kv('Workspaces', chalk.cyan(String(profilesReadiness.summary.total)), { labelWidth: 16 }),
           kv('Ready', chalk.cyan(String(profilesReadiness.summary.ready)), { labelWidth: 16 }),
           kv('Needs Setup', chalk.cyan(String(profilesReadiness.summary.needsSetup)), { labelWidth: 16 }),
-          kv('Tokens Missing', chalk.cyan(String(profilesReadiness.summary.tokensMissing)), { labelWidth: 16 })
+          kv('Access Missing', chalk.cyan(String(profilesReadiness.summary.tokensMissing)), { labelWidth: 16 })
         ];
 
         console.log('');

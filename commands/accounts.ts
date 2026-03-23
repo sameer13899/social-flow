@@ -13,12 +13,21 @@ function summarizeActionLog(rows) {
   let success = 0;
   let failed = 0;
   let lastError = '';
+  let lastActivity = '';
 
   entries.forEach((entry) => {
     const status = String(entry?.status || '').toLowerCase();
     if (SUCCESS_STATUSES.has(status)) success += 1;
     if (FAILURE_STATUSES.has(status)) failed += 1;
   });
+
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const when = String(entries[i]?.when || entries[i]?.createdAt || '').trim();
+    if (when) {
+      lastActivity = when;
+      break;
+    }
+  }
 
   for (let i = entries.length - 1; i >= 0; i -= 1) {
     const status = String(entries[i]?.status || '').toLowerCase();
@@ -28,7 +37,7 @@ function summarizeActionLog(rows) {
     }
   }
 
-  return { success, failed, lastError };
+  return { success, failed, lastError, lastActivity };
 }
 
 function truncateText(value, max = 36) {
@@ -36,6 +45,14 @@ function truncateText(value, max = 36) {
   if (!text) return '';
   if (text.length <= max) return text;
   return `${text.slice(0, max - 1)}…`;
+}
+
+function formatActivity(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toISOString().replace('T', ' ').slice(0, 16);
 }
 
 function withProfile(profile, fn) {
@@ -103,31 +120,34 @@ function registerAccountsCommands(program) {
       const errorCount = snapshots.filter((s) => s.metrics.failed > 0).length;
 
       const summaryRows = [
-        `${chalk.gray('Active'.padEnd(14, ' '))} ${chalk.cyan(active)}`,
-        `${chalk.gray('Profiles'.padEnd(14, ' '))} ${chalk.cyan(String(snapshots.length))}`,
-        `${chalk.gray('Ready'.padEnd(14, ' '))} ${chalk.cyan(String(readyCount))}`,
-        `${chalk.gray('Needs setup'.padEnd(14, ' '))} ${chalk.cyan(String(snapshots.length - readyCount))}`,
-        `${chalk.gray('Tokens missing'.padEnd(14, ' '))} ${chalk.cyan(String(tokenMissing))}`,
-        `${chalk.gray('Profiles w/errors'.padEnd(14, ' '))} ${chalk.cyan(String(errorCount))}`
+        `${chalk.gray('Active workspace'.padEnd(18, ' '))} ${chalk.cyan(active)}`,
+        `${chalk.gray('Workspaces'.padEnd(18, ' '))} ${chalk.cyan(String(snapshots.length))}`,
+        `${chalk.gray('Ready to run'.padEnd(18, ' '))} ${chalk.cyan(String(readyCount))}`,
+        `${chalk.gray('Needs setup'.padEnd(18, ' '))} ${chalk.cyan(String(snapshots.length - readyCount))}`,
+        `${chalk.gray('Access missing'.padEnd(18, ' '))} ${chalk.cyan(String(tokenMissing))}`,
+        `${chalk.gray('Workspaces w/errors'.padEnd(18, ' '))} ${chalk.cyan(String(errorCount))}`
       ];
 
       const rows = snapshots.map((s) => {
         const readyBadge = s.readiness.ok ? formatBadge('READY', { tone: 'success' }) : formatBadge('SETUP', { tone: 'warn' });
         const tokenBadge = s.readiness.anyTokenConfigured
-          ? formatBadge('TOKENS', { tone: 'success' })
-          : formatBadge('TOKENS?', { tone: 'warn' });
+          ? formatBadge('ACCESS', { tone: 'success' })
+          : formatBadge('ACCESS?', { tone: 'warn' });
         const onboardingBadge = s.readiness.onboardingCompleted
-          ? formatBadge('ONBOARD', { tone: 'success' })
-          : formatBadge('ONBOARD?', { tone: 'warn' });
+          ? formatBadge('SETUP', { tone: 'success' })
+          : formatBadge('SETUP?', { tone: 'warn' });
         const appBadge = s.readiness.appCredentialsConfigured
           ? formatBadge('APP', { tone: 'success' })
           : formatBadge('APP?', { tone: 'warn' });
         const metrics = chalk.gray(`${s.metrics.success} ok / ${s.metrics.failed} fail`);
+        const lastActivity = s.metrics.lastActivity
+          ? chalk.gray(`last ${formatActivity(s.metrics.lastActivity)}`)
+          : chalk.gray('no activity');
         const lastError = s.metrics.lastError
           ? chalk.red(truncateText(s.metrics.lastError, 36))
           : chalk.gray('no errors');
         const prefix = s.active ? chalk.green('*') : ' ';
-        return `${prefix} ${chalk.cyan(s.profile)}  ${readyBadge} ${tokenBadge} ${onboardingBadge} ${appBadge}  ${metrics}  ${lastError}`;
+        return `${prefix} ${chalk.cyan(s.profile)}  ${readyBadge} ${tokenBadge} ${onboardingBadge} ${appBadge}  ${metrics}  ${lastActivity}  ${lastError}`;
       });
 
       console.log('');
@@ -209,5 +229,6 @@ module.exports = registerAccountsCommands;
 
 (registerAccountsCommands)._private = {
   summarizeActionLog,
-  truncateText
+  truncateText,
+  formatActivity
 };
