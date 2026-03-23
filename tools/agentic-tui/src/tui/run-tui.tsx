@@ -802,6 +802,7 @@ function HatchRuntime(): JSX.Element {
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingSeen, setOnboardingSeen] = useState(false);
   const [safeMode, setSafeMode] = useState(false);
+  const [panicSummary, setPanicSummary] = useState<{ text: string; at: string } | null>(null);
   const [selectedAccount, setSelectedAccount] = useState("default");
   const [replaySuggestionIndex, setReplaySuggestionIndex] = useState(0);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
@@ -2101,7 +2102,11 @@ function HatchRuntime(): JSX.Element {
         void parseAndQueueIntent(command);
       },
       onToggleGuideOverlay: () => toggleGuideOverlay(),
-      onPanicSummary: () => addTurn("assistant", buildPanicSummary()),
+      onPanicSummary: () => {
+        const summary = buildPanicSummary();
+        setPanicSummary({ text: summary, at: new Date().toISOString() });
+        addTurn("assistant", `COPY BLOCK:\n${summary}`);
+      },
       onDiagnosticPack: () => addTurn("assistant", buildDiagnosticPack()),
       onToggleGuidedMenu: () => toggleGuidedMenu(),
       onAdvanceOnboarding: () => advanceOnboarding(),
@@ -2596,6 +2601,20 @@ function HatchRuntime(): JSX.Element {
             <Text color={theme.accent}>Do this: {nextGuideCommand}</Text>
             <Text color={theme.muted}>Tip: press h for help fixing issues.</Text>
             <Text color={theme.muted}>Tip: press i to hide this guide.</Text>
+          </FramedBlock>
+        </>
+      ) : null}
+      {panicSummary ? (
+        <>
+          <SectionHeading label="Copy block" />
+          <FramedBlock title={`Panic summary (${formatOpsTime(panicSummary.at)})`} borderColor={theme.warning}>
+            <Text color={theme.warning}>Copy everything below and paste it into support.</Text>
+            <Box marginTop={1} flexDirection="column">
+              {panicSummary.text.split("\n").map((line, idx) => (
+                <Text key={`panic-${idx}`} color={theme.muted}>{line}</Text>
+              ))}
+            </Box>
+            <Text color={theme.muted}>Tip: press p to refresh this summary.</Text>
           </FramedBlock>
         </>
       ) : null}
