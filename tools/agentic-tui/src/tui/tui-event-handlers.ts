@@ -25,6 +25,7 @@ export interface ShortcutHandlers {
   onDiagnosticPack: () => void;
   onToggleGuidedMenu: () => void;
   onAdvanceOnboarding: () => void;
+  onFixNow: () => void;
   onGuide: () => void;
   onNextAction: () => void;
   onLogs: () => void;
@@ -163,6 +164,10 @@ export function handleShortcut(
   }
   if (input === "t" && allowSingleKey && phase === "INPUT") {
     handlers.onAdvanceOnboarding();
+    return true;
+  }
+  if (input === "z" && allowSingleKey && phase === "INPUT") {
+    handlers.onFixNow();
     return true;
   }
   if (input === "/" && allowSingleKey && phase === "INPUT") {

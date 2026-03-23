@@ -28,6 +28,7 @@ function handlerFlags() {
     diagnostic: false,
     guidedMenu: false,
     onboarding: false,
+    fixNow: false,
     palette: false,
     guide: false,
     nextAction: false,
@@ -66,6 +67,7 @@ function handlers(flags: ReturnType<typeof handlerFlags>) {
     onDiagnosticPack: () => { flags.diagnostic = true; },
     onToggleGuidedMenu: () => { flags.guidedMenu = true; },
     onAdvanceOnboarding: () => { flags.onboarding = true; },
+    onFixNow: () => { flags.fixNow = true; },
     onPaletteToggle: () => { flags.palette = true; },
     onGuide: () => { flags.guide = true; },
     onNextAction: () => { flags.nextAction = true; },
@@ -324,6 +326,18 @@ export const shortcutHandlerTests: TuiTestCase[] = [
       });
       assert.equal(consumed, true);
       assert.equal(flags.onboarding, true);
+    }
+  },
+  {
+    name: "z runs fix now in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("z", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.fixNow, true);
     }
   },
   {

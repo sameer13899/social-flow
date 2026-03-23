@@ -2110,6 +2110,10 @@ function HatchRuntime(): JSX.Element {
       onDiagnosticPack: () => addTurn("assistant", buildDiagnosticPack()),
       onToggleGuidedMenu: () => toggleGuidedMenu(),
       onAdvanceOnboarding: () => advanceOnboarding(),
+      onFixNow: () => {
+        dispatch({ type: "SET_INPUT", value: fixNowAction.command });
+        void parseAndQueueIntent(fixNowAction.command);
+      },
       onPaletteToggle: () => {
         setPaletteQuery("");
         setShowPalette(true);
@@ -2352,6 +2356,7 @@ function HatchRuntime(): JSX.Element {
   }, [focusedAlertsCommand, focusedApprovalsCommand, focusedOpsWorkspace, nextGuideCommand]);
   const hotkeyTips = useMemo(() => {
     const tips: string[] = [];
+    tips.push("z fix now");
     if (missingSetup.length > 0 || authIssue || lastError) tips.push("h help fix");
     tips.push(showGuideOverlay ? "i hide guide" : "i show guide");
     tips.push(showGuidedMenu ? "w close menu" : "w menu");
@@ -2429,6 +2434,27 @@ function HatchRuntime(): JSX.Element {
   const lastActionLabel = recentFail
     ? `${recentFail.action}${recentFail.error ? ` — ${shortText(recentFail.error, 90)}` : ""}`
     : "";
+  const fixNowAction = (() => {
+    if (missingSetup.length > 0 || authIssue) {
+      return { label: "Run guided setup", command: "guided setup" };
+    }
+    if (lastError) {
+      return { label: "Fix last error", command: "fix last error" };
+    }
+    if (unresolvedCount > 0) {
+      return { label: "Open first item", command: "open 1" };
+    }
+    if (opsNeedsAttention > 0) {
+      if (focusedOpsWorkspace?.approvalsOpen) {
+        return { label: "Review approvals", command: focusedApprovalsCommand };
+      }
+      if (focusedOpsWorkspace?.alertsOpen) {
+        return { label: "Review alerts", command: focusedAlertsCommand };
+      }
+      return { label: "Review ops center", command: "social ops center" };
+    }
+    return { label: "Run doctor", command: "social doctor" };
+  })();
 
   const buildPanicSummary = useCallback(() => {
     const lines = [
@@ -2847,6 +2873,10 @@ function HatchRuntime(): JSX.Element {
             <Text color={focusTone}>{focusTitle}</Text>
             <Text color={theme.muted}>{focusDetail}</Text>
             <Text color={theme.muted}>Reason: {focusReason}</Text>
+            <Box marginTop={1} flexDirection="column">
+              <Text color={theme.accent}>Fix it now: {fixNowAction.label}</Text>
+              <Text color={theme.muted}>press z or copy: {fixNowAction.command}</Text>
+            </Box>
             {lastActionLabel ? (
               <Text color={theme.muted}>Last failed action: {lastActionLabel}</Text>
             ) : null}
@@ -3217,7 +3247,7 @@ function HatchRuntime(): JSX.Element {
           <Text color={theme.text}>Memory: say `my name is ...` and later ask `what's my name`.</Text>
           <Text color={theme.text}>Keys: Enter/y approve, n/r reject, e edit slots, d diagnostics.</Text>
           <Text color={theme.text}>Quick: g guided setup, n next step, l logs, {`1-${Math.min(9, quickActions.length)}`} run onboarding steps.</Text>
-          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), w menu, t tutorial, b board filter, c attention mode, v quiet mode, i next-step guide, m safe mode, p panic, k diagnostic pack, [ ] cycle focus, f run focus, s switch workspace, a approvals, e alerts, h help fix, x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
+          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), w menu, t tutorial, z fix now, b board filter, c attention mode, v quiet mode, i next-step guide, m safe mode, p panic, k diagnostic pack, [ ] cycle focus, f run focus, s switch workspace, a approvals, e alerts, h help fix, x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
           <Text color={theme.muted}>Tokens: type "fix token" or "open whatsapp token" to launch the dashboard.</Text>
           </FramedBlock>
         </>
@@ -3233,7 +3263,7 @@ function HatchRuntime(): JSX.Element {
         <Text color={theme.muted}>Hotkeys now: {hotkeyTips.join(" | ")}</Text>
       ) : null}
       <Text color={theme.muted}>
-        Enter confirm | / palette (filter) | w menu | t tutorial | b board | c attention | v quiet | i guide | m safe | p panic | k pack | [ ] focus | f run | s switch | a approvals | e alerts | h help | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
+        Enter confirm | / palette (filter) | w menu | t tutorial | z fix | b board | c attention | v quiet | i guide | m safe | p panic | k pack | [ ] focus | f run | s switch | a approvals | e alerts | h help | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
       </Text>
     </Box>
   );
