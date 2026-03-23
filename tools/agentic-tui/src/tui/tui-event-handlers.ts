@@ -18,6 +18,7 @@ export interface ShortcutHandlers {
   onFocusApprovals: () => void;
   onFocusAlerts: () => void;
   onToggleQuietMode: () => void;
+  onHelpFix: () => void;
   onGuide: () => void;
   onNextAction: () => void;
   onLogs: () => void;
@@ -128,6 +129,10 @@ export function handleShortcut(
   }
   if (input === "v" && allowSingleKey && phase === "INPUT") {
     handlers.onToggleQuietMode();
+    return true;
+  }
+  if (input === "h" && allowSingleKey && phase === "INPUT") {
+    handlers.onHelpFix();
     return true;
   }
   if (input === "/" && allowSingleKey && phase === "INPUT") {

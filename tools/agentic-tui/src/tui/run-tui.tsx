@@ -2005,6 +2005,17 @@ function HatchRuntime(): JSX.Element {
         void parseAndQueueIntent(focusedAlertsCommand);
       },
       onToggleQuietMode: () => toggleQuietMode(),
+      onHelpFix: () => {
+        const command = missingSetup.length > 0 || authIssue
+          ? "guided setup"
+          : lastError
+            ? "fix last error"
+            : unresolvedCount > 0
+              ? "status"
+              : "social doctor";
+        dispatch({ type: "SET_INPUT", value: command });
+        void parseAndQueueIntent(command);
+      },
       onPaletteToggle: () => {
         setPaletteQuery("");
         setShowPalette(true);
@@ -2478,6 +2489,7 @@ function HatchRuntime(): JSX.Element {
                   <Text color={theme.muted}>Tip: press a for approvals, e for alerts.</Text>
                   <Text color={theme.muted}>Tip: press c to toggle attention mode.</Text>
                   <Text color={theme.muted}>Tip: press v for quiet mode.</Text>
+                  <Text color={theme.muted}>Tip: press h for help fixing issues.</Text>
                   <Text color={theme.muted}>Tip: run "social ops center" for a full CLI view.</Text>
                 </Box>
               ) : (
@@ -2875,7 +2887,7 @@ function HatchRuntime(): JSX.Element {
           <Text color={theme.text}>Memory: say `my name is ...` and later ask `what's my name`.</Text>
           <Text color={theme.text}>Keys: Enter/y approve, n/r reject, e edit slots, d diagnostics.</Text>
           <Text color={theme.text}>Quick: g guided setup, n next step, l logs, {`1-${Math.min(9, quickActions.length)}`} run onboarding steps.</Text>
-          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), b board filter, c attention mode, v quiet mode, [ ] cycle focus, f run focus, s switch workspace, a approvals, e alerts, x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
+          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), b board filter, c attention mode, v quiet mode, [ ] cycle focus, f run focus, s switch workspace, a approvals, e alerts, h help fix, x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
           <Text color={theme.muted}>Tokens: type "fix token" or "open whatsapp token" to launch the dashboard.</Text>
           </FramedBlock>
         </>
@@ -2888,7 +2900,7 @@ function HatchRuntime(): JSX.Element {
       </Box>
       <Text color={state.currentRisk === "HIGH" ? riskTone : theme.accent}>{actionHint}</Text>
       <Text color={theme.muted}>
-        Enter confirm | / palette (filter) | b board | c attention | v quiet | [ ] focus | f run | s switch | a approvals | e alerts | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
+        Enter confirm | / palette (filter) | b board | c attention | v quiet | [ ] focus | f run | s switch | a approvals | e alerts | h help | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
       </Text>
     </Box>
   );
