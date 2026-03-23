@@ -39,6 +39,7 @@ social ai --provider ollama "get my facebook profile"
 social onboard
 social doctor
 social status
+social status --profiles
 social config
 social accounts summary
 social accounts switch <name>

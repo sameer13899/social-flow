@@ -22,6 +22,7 @@ social status
 ```bash
 social hatch
 social accounts summary
+social status --profiles
 social profile get --fields id,name
 social post create --message "Hello team" --page-id PAGE_ID
 social ads list --account act_123

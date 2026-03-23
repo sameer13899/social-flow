@@ -1,6 +1,6 @@
 const chalk = require('chalk');
 const { getGatewayStatus, fetchHealth } = require('../lib/gateway/manager');
-const { buildReadinessReport } = require('../lib/readiness');
+const { buildReadinessReport, buildProfilesReadinessReport } = require('../lib/readiness');
 const { renderPanel, formatBadge, kv } = require('../lib/ui/chrome');
 const { deriveGuidanceSteps, guidanceRows } = require('../lib/guidance');
 
@@ -9,9 +9,11 @@ function registerStatusCommand(program) {
     .command('status')
     .description('Show gateway runtime status and setup readiness')
     .option('--json', 'Output as JSON')
+    .option('--profiles', 'Show readiness across all profiles')
     .action(async (opts) => {
       let service = getGatewayStatus();
       const readiness = buildReadinessReport();
+      const profilesReadiness = opts.profiles ? buildProfilesReadinessReport() : null;
       let health = await fetchHealth(service.host, service.port);
 
       // Recover from stale runtime state by probing default localhost endpoint.
@@ -46,7 +48,8 @@ function registerStatusCommand(program) {
             startedAt: service.startedAt,
             health
           },
-          readiness
+          readiness,
+          profilesReadiness
         }, null, 2));
         return;
       }
@@ -97,6 +100,47 @@ function registerStatusCommand(program) {
         minWidth: 84,
         borderColor: (value) => chalk.blue(value)
       }));
+
+      if (profilesReadiness) {
+        const profileRows = profilesReadiness.profiles.map((item) => {
+          const readyBadge = item.readiness.ok
+            ? formatBadge('READY', { tone: 'success' })
+            : formatBadge('SETUP', { tone: 'warn' });
+          const tokenBadge = item.readiness.anyTokenConfigured
+            ? formatBadge('TOKENS', { tone: 'success' })
+            : formatBadge('TOKENS?', { tone: 'warn' });
+          const onboardingBadge = item.readiness.onboardingCompleted
+            ? formatBadge('ONBOARD', { tone: 'success' })
+            : formatBadge('ONBOARD?', { tone: 'warn' });
+          const appBadge = item.readiness.appCredentialsConfigured
+            ? formatBadge('APP', { tone: 'success' })
+            : formatBadge('APP?', { tone: 'warn' });
+          const prefix = item.active ? chalk.green('*') : ' ';
+          return `${prefix} ${chalk.cyan(item.profile)}  ${readyBadge} ${tokenBadge} ${onboardingBadge} ${appBadge}`;
+        });
+
+        const summaryRows = [
+          kv('Profiles', chalk.cyan(String(profilesReadiness.summary.total)), { labelWidth: 16 }),
+          kv('Ready', chalk.cyan(String(profilesReadiness.summary.ready)), { labelWidth: 16 }),
+          kv('Needs Setup', chalk.cyan(String(profilesReadiness.summary.needsSetup)), { labelWidth: 16 }),
+          kv('Tokens Missing', chalk.cyan(String(profilesReadiness.summary.tokensMissing)), { labelWidth: 16 })
+        ];
+
+        console.log('');
+        console.log(renderPanel({
+          title: ' Profiles Summary ',
+          rows: summaryRows,
+          minWidth: 84,
+          borderColor: (value) => chalk.cyan(value)
+        }));
+        console.log('');
+        console.log(renderPanel({
+          title: ' Profiles Readiness ',
+          rows: profileRows,
+          minWidth: 84,
+          borderColor: (value) => chalk.blue(value)
+        }));
+      }
       console.log('');
       console.log(renderPanel({
         title: ' Guidance Sequence ',
