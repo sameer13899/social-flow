@@ -8,6 +8,7 @@ import type {
   HatchMemorySnapshot,
   MemoryIntentRecord,
   MemoryUnresolvedRecord,
+  OpsCenterSnapshot,
   PersistedLog
 } from "./tui-types.js";
 
@@ -373,6 +374,65 @@ async function resolveLogDir(): Promise<string> {
   return candidates[0];
 }
 
+function sanitizeWorkspaceName(name: string): string {
+  const raw = String(name || "").trim();
+  const trimmed = raw.startsWith("@") ? raw.slice(1) : raw;
+  const safe = trimmed.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return safe || "default";
+}
+
+function opsRootCandidates(): string[] {
+  const base = path.dirname(socialFlowDirLegacyAware());
+  return [
+    path.join(base, "ops"),
+    path.join(process.cwd(), ".social-flow-ops"),
+    path.join(process.cwd(), ".social-cli-ops")
+  ];
+}
+
+async function resolveOpsRoot(): Promise<string> {
+  const candidates = opsRootCandidates();
+  for (const candidate of candidates) {
+    if (await exists(candidate)) return candidate;
+  }
+  return candidates[0];
+}
+
+async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
+  if (!(await exists(filePath))) return fallback;
+  try {
+    const raw = await readFile(filePath, "utf8");
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function latestTimestamp(rows: Array<Record<string, unknown>>, keys: string[]): string {
+  const fields = Array.isArray(keys) ? keys : [];
+  let latest = "";
+  let latestTs = 0;
+  rows.forEach((row) => {
+    fields.forEach((field) => {
+      const raw = String(row?.[field] || "").trim();
+      if (!raw) return;
+      const ts = Date.parse(raw);
+      if (Number.isFinite(ts) && ts > latestTs) {
+        latestTs = ts;
+        latest = raw;
+      }
+    });
+  });
+  return latest;
+}
+
+function deriveNextOpsAction(approvalsOpen: number, alertsOpen: number, lastMorningRunDate: string): string {
+  if (approvalsOpen > 0) return "Review approvals";
+  if (alertsOpen > 0) return "Review alerts";
+  if (!lastMorningRunDate) return "Run morning check";
+  return "All clear";
+}
+
 export async function loadConfigSnapshot(): Promise<ConfigSnapshot> {
   await ensureMigratedAppHome();
   let raw = "";
@@ -533,6 +593,50 @@ export async function loadConfigSnapshot(): Promise<ConfigSnapshot> {
       webhookVerifyToken: String(waba.webhookVerifyToken || "")
     },
     profiles
+  };
+}
+
+export async function loadOpsSnapshot(workspaces: string[], activeWorkspace: string): Promise<OpsCenterSnapshot> {
+  const root = await resolveOpsRoot();
+  const unique = Array.from(new Set(
+    (Array.isArray(workspaces) ? workspaces : [])
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+  ));
+  const fallback = activeWorkspace ? [activeWorkspace] : ["default"];
+  const targets = unique.length ? unique : fallback;
+
+  const rows = await Promise.all(targets.map(async (name) => {
+    const dir = path.join(root, sanitizeWorkspaceName(name));
+    const approvals = await readJsonFile<Array<{ status?: string }>>(path.join(dir, "approvals.json"), []);
+    const alerts = await readJsonFile<Array<{ status?: string }>>(path.join(dir, "alerts.json"), []);
+    const actions = await readJsonFile<Array<Record<string, unknown>>>(path.join(dir, "actionLog.json"), []);
+    const outcomes = await readJsonFile<Array<Record<string, unknown>>>(path.join(dir, "outcomes.json"), []);
+    const state = await readJsonFile<Record<string, unknown>>(path.join(dir, "state.json"), {});
+
+    const approvalsOpen = approvals.filter((a) => String(a?.status || "") === "pending").length;
+    const alertsOpen = alerts.filter((a) => String(a?.status || "") === "open").length;
+    const lastActionAt = latestTimestamp(actions, ["when", "createdAt", "timestamp"]);
+    const lastOutcomeAt = latestTimestamp(outcomes, ["createdAt"]);
+    const lastActivity = latestTimestamp(
+      [{ at: lastActionAt }, { at: lastOutcomeAt }],
+      ["at"]
+    );
+    const lastMorningRunDate = String(state?.lastMorningRunDate || "").trim();
+
+    return {
+      name,
+      approvalsOpen,
+      alertsOpen,
+      lastMorningRunDate,
+      lastActivity,
+      nextAction: deriveNextOpsAction(approvalsOpen, alertsOpen, lastMorningRunDate)
+    };
+  }));
+
+  return {
+    activeWorkspace: String(activeWorkspace || "default").trim() || "default",
+    workspaces: rows
   };
 }
 

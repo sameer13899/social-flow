@@ -24,6 +24,7 @@ import {
   accountOptionsFromConfig,
   loadConfigSnapshot,
   loadHatchMemory,
+  loadOpsSnapshot,
   loadPersistedLogs,
   saveHatchMemory
 } from "./tui-session-actions.js";
@@ -34,6 +35,7 @@ import type {
   LoadState,
   MemoryIntentRecord,
   MemoryUnresolvedRecord,
+  OpsCenterSnapshot,
   PersistedLog
 } from "./tui-types.js";
 
@@ -64,6 +66,14 @@ function shortTime(iso: string): string {
   const date = new Date(String(iso || ""));
   if (Number.isNaN(date.getTime())) return "--:--:--";
   return date.toISOString().slice(11, 19);
+}
+
+function formatOpsTime(value: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toISOString().replace("T", " ").slice(0, 16);
 }
 
 function logLevelColor(level: LogEntry["level"]): "cyan" | "yellow" | "red" | "green" {
@@ -754,6 +764,11 @@ function HatchRuntime(): JSX.Element {
     error: null,
     data: null
   });
+  const [opsState, setOpsState] = useState<LoadState<OpsCenterSnapshot | null>>({
+    loading: true,
+    error: null,
+    data: null
+  });
   const [logsState, setLogsState] = useState<LoadState<PersistedLog[]>>({
     loading: true,
     error: null,
@@ -851,10 +866,32 @@ function HatchRuntime(): JSX.Element {
     }
   }, []);
 
+  const refreshOps = useCallback(async () => {
+    const cfg = configState.data;
+    if (!cfg) {
+      setOpsState({ loading: false, error: null, data: null });
+      return;
+    }
+    const profiles = Array.isArray(cfg.profiles) ? cfg.profiles.map((p) => p.name) : [];
+    const activeWorkspace = String(cfg.activeProfile || "default").trim() || "default";
+    setOpsState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const snapshot = await loadOpsSnapshot(profiles, activeWorkspace);
+      setOpsState({ loading: false, error: null, data: snapshot });
+    } catch (err) {
+      setOpsState({ loading: false, error: String((err as Error)?.message || err), data: null });
+    }
+  }, [configState.data]);
+
   useEffect(() => {
     void refreshConfig();
     void refreshLogs();
   }, [refreshConfig, refreshLogs]);
+
+  useEffect(() => {
+    if (!configState.data) return;
+    void refreshOps();
+  }, [configState.data, refreshOps]);
 
   useEffect(() => {
     if (handoffDone) return;
@@ -882,6 +919,14 @@ function HatchRuntime(): JSX.Element {
     }, 5000);
     return () => clearInterval(id);
   }, [refreshLogs]);
+
+  useEffect(() => {
+    if (!configState.data) return undefined;
+    const id = setInterval(() => {
+      void refreshOps();
+    }, 10000);
+    return () => clearInterval(id);
+  }, [configState.data, refreshOps]);
 
   useEffect(() => {
     let active = true;
@@ -1075,6 +1120,11 @@ function HatchRuntime(): JSX.Element {
   }, [rememberIntent, runExecution, state.showDetails, streamAssistantTurn]);
 
   const config = configState.data;
+  const opsSnapshot = opsState.data;
+  const opsWorkspaces = opsSnapshot?.workspaces ?? [];
+  const opsApprovalsOpen = opsWorkspaces.reduce((acc, row) => acc + (row.approvalsOpen || 0), 0);
+  const opsAlertsOpen = opsWorkspaces.reduce((acc, row) => acc + (row.alertsOpen || 0), 0);
+  const opsNeedsAttention = opsWorkspaces.filter((row) => row.approvalsOpen > 0 || row.alertsOpen > 0).length;
   const waba = config?.waba || {
     connected: false,
     businessId: "",
@@ -2036,6 +2086,8 @@ function HatchRuntime(): JSX.Element {
     lastError ? { label: "Fix last error", value: "fix last error", show: true } : null,
     { label: "Doctor", value: "doctor", show: true },
     { label: "Status", value: "status", show: true },
+    { label: "Ops center", value: "social ops center", show: true },
+    { label: "Workspace check", value: "social accounts check --only needs-setup", show: true },
     { label: "Why this plan", value: "__why__", show: true },
     { label: "WABA setup guide", value: "waba setup", show: true },
     { label: "WABA send example", value: "social waba send --from PHONE_ID --to +15551234567 --body \"Hello\"", show: true },
@@ -2222,26 +2274,78 @@ function HatchRuntime(): JSX.Element {
             ) : null}
           </FramedBlock>
 
-          <SectionHeading label="Profiles" />
-          <FramedBlock title="Portfolio">
+          <SectionHeading label="Agency board" />
+          <FramedBlock title="Ops center">
+            {opsState.loading ? <Text color={theme.muted}>loading ops center...</Text> : null}
+            {opsState.error ? <Text color={theme.error}>ops center error: {opsState.error}</Text> : null}
+            {!opsState.loading && !opsState.error ? (
+              opsWorkspaces.length ? (
+                <Box flexDirection="column">
+                  <Text color={theme.muted}>
+                    workspaces {opsWorkspaces.length} | approvals {opsApprovalsOpen} | alerts {opsAlertsOpen} | needs attention {opsNeedsAttention}
+                  </Text>
+                  {opsWorkspaces.map((row) => {
+                    const isActive = row.name === (opsSnapshot?.activeWorkspace || config?.activeProfile);
+                    const approvalsTone = row.approvalsOpen > 0 ? "fail" : "ok";
+                    const alertsTone = row.alertsOpen > 0 ? "fail" : "ok";
+                    const lastCheck = row.lastMorningRunDate ? row.lastMorningRunDate : "not run";
+                    const lastActivity = row.lastActivity ? formatOpsTime(row.lastActivity) : "none";
+                    const nextCommand = row.nextAction === "Review approvals"
+                      ? `social ops approvals list --workspace ${row.name} --open`
+                      : row.nextAction === "Review alerts"
+                        ? `social ops alerts list --workspace ${row.name} --open`
+                        : row.nextAction === "Run morning check"
+                          ? `social ops morning-run --workspace ${row.name} --spend 0`
+                          : "";
+                    return (
+                      <Box key={row.name} marginTop={1} flexDirection="column">
+                        <Box>
+                          <Text color={isActive ? theme.success : theme.text}>
+                            {row.name}{isActive ? " (active)" : ""}
+                          </Text>
+                          <Text color={theme.muted}> approvals </Text>
+                          <StatusBadge label={row.approvalsOpen > 0 ? "FAIL" : "OK"} tone={approvalsTone} />
+                          <Text color={theme.muted}> {row.approvalsOpen} </Text>
+                          <Text color={theme.muted}> alerts </Text>
+                          <StatusBadge label={row.alertsOpen > 0 ? "FAIL" : "OK"} tone={alertsTone} />
+                          <Text color={theme.muted}> {row.alertsOpen}</Text>
+                        </Box>
+                        <Text color={theme.muted}>last check {lastCheck} | last activity {lastActivity}</Text>
+                        <Text color={theme.muted}>next: {row.nextAction}</Text>
+                        {nextCommand ? (
+                          <Text color={theme.accent}>Run: {nextCommand}</Text>
+                        ) : null}
+                      </Box>
+                    );
+                  })}
+                  <Text color={theme.muted}>Tip: run "social ops center" for a full CLI view.</Text>
+                </Box>
+              ) : (
+                <Text color={theme.muted}>No workspaces found. Add one with: social accounts add &lt;name&gt;</Text>
+              )
+            ) : null}
+          </FramedBlock>
+
+          <SectionHeading label="Workspaces" />
+          <FramedBlock title="Access status">
             {profileSummary.length ? (
               profileSummary.map((p) => (
                 <Box key={p.name}>
                   <Text color={p.name === config?.activeProfile ? theme.success : theme.text}>
                     {p.name}{p.name === config?.activeProfile ? " (active)" : ""}
                   </Text>
-                  <Text color={theme.muted}> — token </Text>
+                  <Text color={theme.muted}> — access </Text>
                   <StatusBadge label={p.tokenSet ? "OK" : "FAIL"} tone={p.tokenSet ? "ok" : "fail"} />
-                  <Text color={theme.muted}> | business </Text>
+                  <Text color={theme.muted}> | WhatsApp business </Text>
                   <StatusBadge label={p.wabaConnected ? "OK" : "FAIL"} tone={p.wabaConnected ? "ok" : "fail"} />
-                  <Text color={theme.muted}> | phone </Text>
+                  <Text color={theme.muted}> | WhatsApp phone </Text>
                   <StatusBadge label={p.phoneNumberId ? "OK" : "FAIL"} tone={p.phoneNumberId ? "ok" : "fail"} />
                 </Box>
               ))
             ) : (
               <Text color={theme.muted}>No profiles found. Add one with: social accounts add &lt;name&gt;</Text>
             )}
-            <Text color={theme.muted}>Switch profile: social accounts switch &lt;name&gt;</Text>
+            <Text color={theme.muted}>Switch workspace: social accounts switch &lt;name&gt;</Text>
           </FramedBlock>
 
           <FramedBlock title="Activity">

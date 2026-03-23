@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { TuiTestCase } from "../parser/intent-parser.test.js";
-import { loadHatchMemory, saveHatchMemory } from "./tui-session-actions.js";
+import { loadHatchMemory, saveHatchMemory, loadOpsSnapshot } from "./tui-session-actions.js";
 
 async function exists(filePath: string): Promise<boolean> {
   try {
@@ -109,6 +109,39 @@ export const sessionActionTests: TuiTestCase[] = [
         assert.equal(await exists(path.join(hatchRoot, "profiles", "legacy.json")), true);
         assert.equal(await exists(path.join(hatchRoot, "index.json")), true);
         assert.equal(await exists(path.join(hatchRoot, "memory.legacy.json")), true);
+      });
+    }
+  },
+  {
+    name: "ops snapshot loads workspace metrics from ops storage",
+    fn: async () => {
+      await withIsolatedCliHome(async (root) => {
+        const opsRoot = path.join(root, "ops", "clientA");
+        await mkdir(opsRoot, { recursive: true });
+        await writeFile(path.join(opsRoot, "approvals.json"), JSON.stringify([
+          { status: "pending" },
+          { status: "approved" }
+        ]), "utf8");
+        await writeFile(path.join(opsRoot, "alerts.json"), JSON.stringify([
+          { status: "open" },
+          { status: "acked" }
+        ]), "utf8");
+        await writeFile(path.join(opsRoot, "actionLog.json"), JSON.stringify([
+          { when: "2026-03-23T10:00:00.000Z", summary: "Action A" }
+        ]), "utf8");
+        await writeFile(path.join(opsRoot, "outcomes.json"), JSON.stringify([
+          { createdAt: "2026-03-23T11:00:00.000Z", summary: "Outcome B" }
+        ]), "utf8");
+        await writeFile(path.join(opsRoot, "state.json"), JSON.stringify({
+          lastMorningRunDate: "2026-03-23"
+        }), "utf8");
+
+        const snapshot = await loadOpsSnapshot(["clientA"], "clientA");
+        assert.equal(snapshot.workspaces.length, 1);
+        assert.equal(snapshot.workspaces[0]?.approvalsOpen, 1);
+        assert.equal(snapshot.workspaces[0]?.alertsOpen, 1);
+        assert.equal(snapshot.workspaces[0]?.nextAction, "Review approvals");
+        assert.equal(snapshot.workspaces[0]?.lastMorningRunDate, "2026-03-23");
       });
     }
   }
