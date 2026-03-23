@@ -1960,6 +1960,19 @@ function HatchRuntime(): JSX.Element {
         dispatch({ type: "SET_INPUT", value: focusedNextCommand });
         void parseAndQueueIntent(focusedNextCommand);
       },
+      onFocusActivate: () => {
+        if (!focusedOpsWorkspace) {
+          addTurn("system", "No focused workspace yet.");
+          return;
+        }
+        if (focusedOpsWorkspace.name === activeWorkspaceName) {
+          addTurn("system", `Already on workspace ${focusedOpsWorkspace.name}.`);
+          return;
+        }
+        const command = `social accounts switch ${focusedOpsWorkspace.name}`;
+        dispatch({ type: "SET_INPUT", value: command });
+        void parseAndQueueIntent(command);
+      },
       onPaletteToggle: () => {
         setPaletteQuery("");
         setShowPalette(true);
@@ -2386,12 +2399,13 @@ function HatchRuntime(): JSX.Element {
                       {focusedNextCommand ? (
                         <Text color={theme.accent}>Run: {focusedNextCommand}</Text>
                       ) : null}
-                      <Text color={theme.muted}>Tip: switch active workspace with "social accounts switch &lt;name&gt;".</Text>
+                      <Text color={theme.muted}>Tip: press s to switch to the focused workspace.</Text>
                     </Box>
                   ) : null}
                   <Text color={theme.muted}>Tip: press b to filter to needs attention or all clear.</Text>
                   <Text color={theme.muted}>Tip: press [ and ] to move focus across workspaces.</Text>
                   <Text color={theme.muted}>Tip: press f to run the focused workspace next action.</Text>
+                  <Text color={theme.muted}>Tip: press s to switch to the focused workspace.</Text>
                   <Text color={theme.muted}>Tip: press c to toggle attention mode.</Text>
                   <Text color={theme.muted}>Tip: run "social ops center" for a full CLI view.</Text>
                 </Box>
@@ -2786,7 +2800,7 @@ function HatchRuntime(): JSX.Element {
           <Text color={theme.text}>Memory: say `my name is ...` and later ask `what's my name`.</Text>
           <Text color={theme.text}>Keys: Enter/y approve, n/r reject, e edit slots, d diagnostics.</Text>
           <Text color={theme.text}>Quick: g guided setup, n next step, l logs, {`1-${Math.min(9, quickActions.length)}`} run onboarding steps.</Text>
-          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), b board filter, c attention mode, [ ] cycle focus, f run focus, x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
+          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), b board filter, c attention mode, [ ] cycle focus, f run focus, s switch workspace, x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
           <Text color={theme.muted}>Tokens: type "fix token" or "open whatsapp token" to launch the dashboard.</Text>
           </FramedBlock>
         </>
@@ -2799,7 +2813,7 @@ function HatchRuntime(): JSX.Element {
       </Box>
       <Text color={state.currentRisk === "HIGH" ? riskTone : theme.accent}>{actionHint}</Text>
       <Text color={theme.muted}>
-        Enter confirm | / palette (filter) | b board | c attention | [ ] focus | f run | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
+        Enter confirm | / palette (filter) | b board | c attention | [ ] focus | f run | s switch | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
       </Text>
     </Box>
   );

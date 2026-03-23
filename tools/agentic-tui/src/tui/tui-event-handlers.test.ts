@@ -17,6 +17,7 @@ function handlerFlags() {
     focusPrev: false,
     focusNext: false,
     focusRun: false,
+    focusActivate: false,
     palette: false,
     guide: false,
     nextAction: false,
@@ -44,6 +45,7 @@ function handlers(flags: ReturnType<typeof handlerFlags>) {
     onFocusPrev: () => { flags.focusPrev = true; },
     onFocusNext: () => { flags.focusNext = true; },
     onFocusRun: () => { flags.focusRun = true; },
+    onFocusActivate: () => { flags.focusActivate = true; },
     onPaletteToggle: () => { flags.palette = true; },
     onGuide: () => { flags.guide = true; },
     onNextAction: () => { flags.nextAction = true; },
@@ -170,6 +172,18 @@ export const shortcutHandlerTests: TuiTestCase[] = [
       });
       assert.equal(consumed, true);
       assert.equal(flags.focusRun, true);
+    }
+  },
+  {
+    name: "s activates focused workspace in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("s", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.focusActivate, true);
     }
   },
   {

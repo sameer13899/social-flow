@@ -14,6 +14,7 @@ export interface ShortcutHandlers {
   onFocusPrev: () => void;
   onFocusNext: () => void;
   onFocusRun: () => void;
+  onFocusActivate: () => void;
   onGuide: () => void;
   onNextAction: () => void;
   onLogs: () => void;
@@ -108,6 +109,10 @@ export function handleShortcut(
   }
   if (input === "f" && allowSingleKey && phase === "INPUT") {
     handlers.onFocusRun();
+    return true;
+  }
+  if (input === "s" && allowSingleKey && phase === "INPUT") {
+    handlers.onFocusActivate();
     return true;
   }
   if (input === "/" && allowSingleKey && phase === "INPUT") {
