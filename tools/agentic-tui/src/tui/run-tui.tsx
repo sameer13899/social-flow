@@ -590,6 +590,65 @@ function formatRecoverySuggestions(suggestions: string[]): string {
   return ` Next: ${suggestions.map((x) => `\`${x}\``).join(" | ")}`;
 }
 
+type ErrorActionSuggestion = { label: string; command: string; detail?: string };
+
+function friendlyCommandLabel(command: string): string {
+  const cmd = command.toLowerCase().trim();
+  if (cmd === "guided setup") return "Run guided setup";
+  if (cmd === "fix token") return "Fix access token";
+  if (cmd === "status") return "Check status";
+  if (cmd === "replay latest") return "Retry the last action";
+  if (cmd.startsWith("social integrations connect waba")) return "Reconnect WhatsApp Business";
+  if (cmd.startsWith("social auth login")) return "Reauthorize access";
+  if (cmd.startsWith("logs")) return "Show recent logs";
+  if (cmd.startsWith("open ")) return "Open the first item";
+  if (cmd === "social doctor") return "Run doctor (health check)";
+  if (cmd === "social ops center") return "Review ops center";
+  return "Run suggested action";
+}
+
+function errorActionDetail(command: string): string {
+  const cmd = command.toLowerCase().trim();
+  if (cmd === "guided setup") return "We will walk you through missing setup steps.";
+  if (cmd === "fix token") return "You will be asked to paste a new token.";
+  if (cmd.startsWith("social integrations connect waba")) return "Reconnect WhatsApp Business and phone number.";
+  if (cmd.startsWith("social auth login")) return "Re-authorize with correct permissions.";
+  if (cmd === "replay latest") return "Retries the last action with the same inputs.";
+  if (cmd.startsWith("logs")) return "Shows recent errors so we can diagnose faster.";
+  return "";
+}
+
+function buildErrorActionSuggestions(errorText: string, authIssue: boolean): ErrorActionSuggestion[] {
+  const msg = String(errorText || "").toLowerCase();
+  if (!msg) return [];
+  const commands: string[] = [];
+
+  if (msg.includes("token")) commands.push("fix token");
+  if (authIssue || msg.includes("auth") || msg.includes("permission") || msg.includes("unauthorized") || msg.includes("forbidden")) {
+    commands.push("guided setup");
+  }
+  if (msg.includes("waba") || msg.includes("whatsapp") || msg.includes("phone") || msg.includes("webhook")) {
+    commands.push("social integrations connect waba");
+  }
+  if (msg.includes("scope")) commands.push("social auth login -a facebook");
+  if (msg.includes("rate") || msg.includes("too many requests") || msg.includes("quota")) commands.push("replay latest");
+  if (msg.includes("timeout") || msg.includes("network") || msg.includes("econn") || msg.includes("fetch")) commands.push("replay latest");
+
+  commands.push("logs limit 20", "status");
+
+  const seen = new Set<string>();
+  return commands.filter((cmd) => {
+    const key = cmd.toLowerCase().trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 4).map((command) => ({
+    label: friendlyCommandLabel(command),
+    command,
+    detail: errorActionDetail(command)
+  }));
+}
+
 function summarizeExecutionForChat(intent: ParsedIntent, result: ExecutionResult): string {
   const output = (result.output || {}) as Record<string, unknown>;
 
@@ -2331,6 +2390,7 @@ function HatchRuntime(): JSX.Element {
           : "No blockers right now.";
   const attentionClear = !lastError && missingSetup.length === 0 && openItems.length === 0 && attentionOpsWorkspaces.length === 0;
   const onboardingContent = onboardingSteps[Math.min(onboardingStep, onboardingSteps.length - 1)];
+  const errorSuggestions = lastError ? buildErrorActionSuggestions(lastError, authIssue) : [];
   const guidedMenuOptions = useMemo(() => {
     const options = [
       { label: "Guided setup (recommended)", value: "guided setup" },
@@ -2728,6 +2788,19 @@ function HatchRuntime(): JSX.Element {
               <Text color={theme.muted}>Tip: open items take 1-3; type the recovery commands below.</Text>
             )}
             <Text color={theme.muted}>Commands: fix last error | replay latest | logs limit 20</Text>
+            {errorSuggestions.length ? (
+              <Box marginTop={1} flexDirection="column">
+                <Text color={theme.accent}>Try this next</Text>
+                {errorSuggestions.map((item) => (
+                  <Box key={item.command} marginTop={1} flexDirection="column">
+                    <Text color={theme.text}>{item.label}</Text>
+                    {item.detail ? <Text color={theme.muted}>{item.detail}</Text> : null}
+                    <Text color={theme.muted}>copy: {item.command}</Text>
+                  </Box>
+                ))}
+                <Text color={theme.muted}>Tip: press z to run Fix it now.</Text>
+              </Box>
+            ) : null}
           </FramedBlock>
         </>
       ) : null}
