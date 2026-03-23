@@ -45,6 +45,7 @@ async function run() {
       'hub.test',
       'industry.test',
       'ui-chrome.test',
+      'accounts-command.test',
       'onboard-command.test',
       'integrations-command.test',
       'whatsapp-command.test',

@@ -1,6 +1,51 @@
 const chalk = require('chalk');
 const inquirer = require('inquirer');
 const config = require('../lib/config');
+const storage = require('../lib/ops/storage');
+const { buildReadinessReport } = require('../lib/readiness');
+const { renderPanel, formatBadge } = require('../lib/ui/chrome');
+
+const SUCCESS_STATUSES = new Set(['done', 'success', 'ok']);
+const FAILURE_STATUSES = new Set(['error', 'failed']);
+
+function summarizeActionLog(rows) {
+  const entries = Array.isArray(rows) ? rows : [];
+  let success = 0;
+  let failed = 0;
+  let lastError = '';
+
+  entries.forEach((entry) => {
+    const status = String(entry?.status || '').toLowerCase();
+    if (SUCCESS_STATUSES.has(status)) success += 1;
+    if (FAILURE_STATUSES.has(status)) failed += 1;
+  });
+
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const status = String(entries[i]?.status || '').toLowerCase();
+    if (FAILURE_STATUSES.has(status)) {
+      lastError = String(entries[i]?.summary || entries[i]?.why || entries[i]?.action || '');
+      break;
+    }
+  }
+
+  return { success, failed, lastError };
+}
+
+function truncateText(value, max = 36) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
+function withProfile(profile, fn) {
+  config.useProfile(profile);
+  try {
+    return fn();
+  } finally {
+    config.clearProfileOverride();
+  }
+}
 
 function registerAccountsCommands(program) {
   const accounts = program.command('accounts').description('Manage multiple accounts/profiles');
@@ -21,6 +66,84 @@ function registerAccountsCommands(program) {
         const mark = p === active ? chalk.green('*') : ' ';
         console.log(`${mark} ${chalk.cyan(p)}`);
       });
+      console.log('');
+    });
+
+  accounts
+    .command('summary')
+    .description('Agency summary across profiles (readiness + recent ops)')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      const profiles = config.listProfiles();
+      const active = config.getActiveProfile();
+      if (!profiles.length) {
+        console.log(chalk.yellow('! No profiles found. Add one with: social accounts add <name>'));
+        console.log('');
+        return;
+      }
+
+      const snapshots = profiles.map((profile) => {
+        const readiness = withProfile(profile, () => buildReadinessReport());
+        const metrics = summarizeActionLog(storage.listActionLog(profile));
+        return {
+          profile,
+          active: profile === active,
+          readiness,
+          metrics
+        };
+      });
+
+      if (options.json) {
+        console.log(JSON.stringify({ active, profiles: snapshots }, null, 2));
+        return;
+      }
+
+      const readyCount = snapshots.filter((s) => s.readiness.ok).length;
+      const tokenMissing = snapshots.filter((s) => !s.readiness.anyTokenConfigured).length;
+      const errorCount = snapshots.filter((s) => s.metrics.failed > 0).length;
+
+      const summaryRows = [
+        `${chalk.gray('Active'.padEnd(14, ' '))} ${chalk.cyan(active)}`,
+        `${chalk.gray('Profiles'.padEnd(14, ' '))} ${chalk.cyan(String(snapshots.length))}`,
+        `${chalk.gray('Ready'.padEnd(14, ' '))} ${chalk.cyan(String(readyCount))}`,
+        `${chalk.gray('Needs setup'.padEnd(14, ' '))} ${chalk.cyan(String(snapshots.length - readyCount))}`,
+        `${chalk.gray('Tokens missing'.padEnd(14, ' '))} ${chalk.cyan(String(tokenMissing))}`,
+        `${chalk.gray('Profiles w/errors'.padEnd(14, ' '))} ${chalk.cyan(String(errorCount))}`
+      ];
+
+      const rows = snapshots.map((s) => {
+        const readyBadge = s.readiness.ok ? formatBadge('READY', { tone: 'success' }) : formatBadge('SETUP', { tone: 'warn' });
+        const tokenBadge = s.readiness.anyTokenConfigured
+          ? formatBadge('TOKENS', { tone: 'success' })
+          : formatBadge('TOKENS?', { tone: 'warn' });
+        const onboardingBadge = s.readiness.onboardingCompleted
+          ? formatBadge('ONBOARD', { tone: 'success' })
+          : formatBadge('ONBOARD?', { tone: 'warn' });
+        const appBadge = s.readiness.appCredentialsConfigured
+          ? formatBadge('APP', { tone: 'success' })
+          : formatBadge('APP?', { tone: 'warn' });
+        const metrics = chalk.gray(`${s.metrics.success} ok / ${s.metrics.failed} fail`);
+        const lastError = s.metrics.lastError
+          ? chalk.red(truncateText(s.metrics.lastError, 36))
+          : chalk.gray('no errors');
+        const prefix = s.active ? chalk.green('*') : ' ';
+        return `${prefix} ${chalk.cyan(s.profile)}  ${readyBadge} ${tokenBadge} ${onboardingBadge} ${appBadge}  ${metrics}  ${lastError}`;
+      });
+
+      console.log('');
+      console.log(renderPanel({
+        title: ' Agency Summary ',
+        rows: summaryRows,
+        minWidth: 86,
+        borderColor: (value) => chalk.cyan(value)
+      }));
+      console.log('');
+      console.log(renderPanel({
+        title: ' Profile Readiness ',
+        rows,
+        minWidth: 110,
+        borderColor: (value) => chalk.blue(value)
+      }));
       console.log('');
     });
 
@@ -84,3 +207,7 @@ function registerAccountsCommands(program) {
 
 module.exports = registerAccountsCommands;
 
+(registerAccountsCommands)._private = {
+  summarizeActionLog,
+  truncateText
+};

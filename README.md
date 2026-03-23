@@ -40,6 +40,8 @@ social onboard
 social doctor
 social status
 social config
+social accounts summary
+social accounts switch <name>
 social profile get --fields id,name
 social post create --message "Hello team" --page-id PAGE_ID
 social ads list --account act_123
