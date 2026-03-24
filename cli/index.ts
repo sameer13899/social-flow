@@ -54,6 +54,7 @@ function normalizeDefaultApi(raw: string): ApiName {
 
 function normalizeAiProvider(raw: string): AiProvider {
   const value = String(raw || "").trim().toLowerCase();
+  if (value === "anthropic" || value === "claude") return "anthropic";
   if (value === "openrouter") return "openrouter";
   if (value === "xai" || value === "grok") return "xai";
   if (value === "openai") return "openai";
@@ -61,6 +62,7 @@ function normalizeAiProvider(raw: string): AiProvider {
 }
 
 function defaultModelForProvider(provider: AiProvider): string {
+  if (provider === "anthropic") return "claude-3-5-sonnet-latest";
   if (provider === "openrouter") return "openai/gpt-4o-mini";
   if (provider === "xai") return "grok-2-latest";
   if (provider === "openai") return "gpt-4o-mini";
@@ -68,6 +70,7 @@ function defaultModelForProvider(provider: AiProvider): string {
 }
 
 function defaultBaseUrlForProvider(provider: AiProvider): string {
+  if (provider === "anthropic") return "https://api.anthropic.com/v1";
   if (provider === "openrouter") return "https://openrouter.ai/api/v1";
   if (provider === "xai") return "https://api.x.ai/v1";
   if (provider === "openai") return "https://api.openai.com/v1";
@@ -75,6 +78,9 @@ function defaultBaseUrlForProvider(provider: AiProvider): string {
 }
 
 function envApiKeyForProvider(provider: AiProvider): string {
+  if (provider === "anthropic") {
+    return process.env.SOCIAL_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || "";
+  }
   if (provider === "openrouter") {
     return process.env.SOCIAL_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || "";
   }
@@ -115,6 +121,8 @@ program
   .description(packageMeta.description || "Deterministic Social Flow")
   .version(packageMeta.version || "0.0.0");
 
+program.addCommand(require("../commands/reach"));
+
 program
   .command("onboard")
   .alias("setup")
@@ -134,7 +142,7 @@ program
     cfg.defaultAdAccountId = (await prompt("Default ad account ID (optional): ")) || undefined;
     const currentProvider = normalizeAiProvider(cfg.ai?.provider || "ollama");
     const aiProvider = normalizeAiProvider(
-      (await prompt(`AI provider [${currentProvider}] (ollama|openai|openrouter|xai): `)) || currentProvider
+      (await prompt(`AI provider [${currentProvider}] (ollama|openai|anthropic|openrouter|xai): `)) || currentProvider
     );
     const aiModelDefault = cfg.ai?.model || defaultModelForProvider(aiProvider);
     const aiBaseDefault = cfg.ai?.baseUrl || defaultBaseUrlForProvider(aiProvider);
@@ -311,7 +319,7 @@ program
   .command("ai")
   .description("Natural language interface (deterministic or AI-assisted)")
   .argument("<intent...>", "intent text")
-  .option("--provider <provider>", "deterministic|ollama|openai|openrouter|xai", "deterministic")
+  .option("--provider <provider>", "deterministic|ollama|openai|anthropic|openrouter|xai", "deterministic")
   .option("--model <model>", "AI model name")
   .option("--base-url <url>", "AI base URL")
   .option("--api-key <key>", "API key for openai-compatible providers")
@@ -374,3 +382,5 @@ main().catch((err) => {
   console.error(String((err as Error)?.stack || err));
   process.exitCode = 1;
 });
+
+
