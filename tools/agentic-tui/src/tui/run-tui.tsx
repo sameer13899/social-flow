@@ -24,6 +24,7 @@ import {
   accountOptionsFromConfig,
   loadConfigSnapshot,
   loadHatchMemory,
+  loadOpsSnapshot,
   loadPersistedLogs,
   saveHatchMemory
 } from "./tui-session-actions.js";
@@ -34,6 +35,7 @@ import type {
   LoadState,
   MemoryIntentRecord,
   MemoryUnresolvedRecord,
+  OpsCenterSnapshot,
   PersistedLog
 } from "./tui-types.js";
 
@@ -64,6 +66,14 @@ function shortTime(iso: string): string {
   const date = new Date(String(iso || ""));
   if (Number.isNaN(date.getTime())) return "--:--:--";
   return date.toISOString().slice(11, 19);
+}
+
+function formatOpsTime(value: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toISOString().replace("T", " ").slice(0, 16);
 }
 
 function logLevelColor(level: LogEntry["level"]): "cyan" | "yellow" | "red" | "green" {
@@ -206,7 +216,54 @@ function unresolvedHint(entry: MemoryUnresolvedRecord): string {
   return reason;
 }
 
+type BoardFilter = "all" | "attention" | "clear";
+
+function nextBoardFilter(current: BoardFilter): BoardFilter {
+  if (current === "all") return "attention";
+  if (current === "attention") return "clear";
+  return "all";
+}
+
+function boardFilterLabel(current: BoardFilter): string {
+  if (current === "attention") return "needs attention";
+  if (current === "clear") return "all clear";
+  return "all";
+}
+
+type OpsRow = OpsCenterSnapshot["workspaces"][number];
+
+function buildOpsNextCommand(row: OpsRow): string {
+  if (row.nextAction === "Review approvals") {
+    return `social ops approvals list --workspace ${row.name} --open`;
+  }
+  if (row.nextAction === "Review alerts") {
+    return `social ops alerts list --workspace ${row.name} --open`;
+  }
+  if (row.nextAction === "Run morning check") {
+    return `social ops morning-run --workspace ${row.name} --spend 0`;
+  }
+  return "";
+}
+
 type QuickAction = { label: string; command: string };
+
+const onboardingSteps: Array<{ title: string; detail: string; action: string }> = [
+  {
+    title: "Welcome to Social Flow",
+    detail: "This guide helps you get started without any technical setup.",
+    action: "Press w to choose a task, or type guided setup."
+  },
+  {
+    title: "Connect your account",
+    detail: "We will walk you through tokens and WhatsApp setup step-by-step.",
+    action: "Press h for help fixing issues or g for guided setup."
+  },
+  {
+    title: "Run your first action",
+    detail: "Pick a simple task, then watch the status and next steps.",
+    action: "Try: status | social doctor"
+  }
+];
 
 function dedupeQuickActions(actions: QuickAction[]): QuickAction[] {
   const seen = new Set<string>();
@@ -533,6 +590,65 @@ function formatRecoverySuggestions(suggestions: string[]): string {
   return ` Next: ${suggestions.map((x) => `\`${x}\``).join(" | ")}`;
 }
 
+type ErrorActionSuggestion = { label: string; command: string; detail?: string };
+
+function friendlyCommandLabel(command: string): string {
+  const cmd = command.toLowerCase().trim();
+  if (cmd === "guided setup") return "Run guided setup";
+  if (cmd === "fix token") return "Fix access token";
+  if (cmd === "status") return "Check status";
+  if (cmd === "replay latest") return "Retry the last action";
+  if (cmd.startsWith("social integrations connect waba")) return "Reconnect WhatsApp Business";
+  if (cmd.startsWith("social auth login")) return "Reauthorize access";
+  if (cmd.startsWith("logs")) return "Show recent logs";
+  if (cmd.startsWith("open ")) return "Open the first item";
+  if (cmd === "social doctor") return "Run doctor (health check)";
+  if (cmd === "social ops center") return "Review ops center";
+  return "Run suggested action";
+}
+
+function errorActionDetail(command: string): string {
+  const cmd = command.toLowerCase().trim();
+  if (cmd === "guided setup") return "We will walk you through missing setup steps.";
+  if (cmd === "fix token") return "You will be asked to paste a new token.";
+  if (cmd.startsWith("social integrations connect waba")) return "Reconnect WhatsApp Business and phone number.";
+  if (cmd.startsWith("social auth login")) return "Re-authorize with correct permissions.";
+  if (cmd === "replay latest") return "Retries the last action with the same inputs.";
+  if (cmd.startsWith("logs")) return "Shows recent errors so we can diagnose faster.";
+  return "";
+}
+
+function buildErrorActionSuggestions(errorText: string, authIssue: boolean): ErrorActionSuggestion[] {
+  const msg = String(errorText || "").toLowerCase();
+  if (!msg) return [];
+  const commands: string[] = [];
+
+  if (msg.includes("token")) commands.push("fix token");
+  if (authIssue || msg.includes("auth") || msg.includes("permission") || msg.includes("unauthorized") || msg.includes("forbidden")) {
+    commands.push("guided setup");
+  }
+  if (msg.includes("waba") || msg.includes("whatsapp") || msg.includes("phone") || msg.includes("webhook")) {
+    commands.push("social integrations connect waba");
+  }
+  if (msg.includes("scope")) commands.push("social auth login -a facebook");
+  if (msg.includes("rate") || msg.includes("too many requests") || msg.includes("quota")) commands.push("replay latest");
+  if (msg.includes("timeout") || msg.includes("network") || msg.includes("econn") || msg.includes("fetch")) commands.push("replay latest");
+
+  commands.push("logs limit 20", "status");
+
+  const seen = new Set<string>();
+  return commands.filter((cmd) => {
+    const key = cmd.toLowerCase().trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 4).map((command) => ({
+    label: friendlyCommandLabel(command),
+    command,
+    detail: errorActionDetail(command)
+  }));
+}
+
 function summarizeExecutionForChat(intent: ParsedIntent, result: ExecutionResult): string {
   const output = (result.output || {}) as Record<string, unknown>;
 
@@ -683,6 +799,13 @@ function formatConfidence(confidence: number | null | undefined): string {
   return `${Math.round(Math.max(0, Math.min(1, confidence)) * 100)}%`;
 }
 
+function confidenceTier(confidence: number | null | undefined): "high" | "medium" | "low" | "unknown" {
+  if (typeof confidence !== "number" || Number.isNaN(confidence)) return "unknown";
+  if (confidence >= 0.8) return "high";
+  if (confidence >= 0.55) return "medium";
+  return "low";
+}
+
 function shouldRequireIntentConfirmation(confidence: number | undefined, action: ParsedIntent["action"]): boolean {
   if (action === "unknown") return true;
   if (action === "run_cli") return false;
@@ -728,6 +851,17 @@ function HatchRuntime(): JSX.Element {
   const [showPalette, setShowPalette] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
+  const [boardFilter, setBoardFilter] = useState<BoardFilter>("all");
+  const [focusedWorkspace, setFocusedWorkspace] = useState<string>("");
+  const [attentionMode, setAttentionMode] = useState(false);
+  const [quietMode, setQuietMode] = useState(false);
+  const [showGuideOverlay, setShowGuideOverlay] = useState(false);
+  const [showGuidedMenu, setShowGuidedMenu] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingSeen, setOnboardingSeen] = useState(false);
+  const [safeMode, setSafeMode] = useState(false);
+  const [panicSummary, setPanicSummary] = useState<{ text: string; at: string } | null>(null);
   const [selectedAccount, setSelectedAccount] = useState("default");
   const [replaySuggestionIndex, setReplaySuggestionIndex] = useState(0);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
@@ -754,6 +888,12 @@ function HatchRuntime(): JSX.Element {
     error: null,
     data: null
   });
+  const [opsState, setOpsState] = useState<LoadState<OpsCenterSnapshot | null>>({
+    loading: true,
+    error: null,
+    data: null
+  });
+  const [opsUpdatedAt, setOpsUpdatedAt] = useState<string>("");
   const [logsState, setLogsState] = useState<LoadState<PersistedLog[]>>({
     loading: true,
     error: null,
@@ -823,6 +963,73 @@ function HatchRuntime(): JSX.Element {
     }
   }, [streamAssistantTurn]);
 
+  const toggleBoardFilter = useCallback(() => {
+    setBoardFilter((prev) => {
+      const next = nextBoardFilter(prev);
+      addTurn("system", `Agency board view: ${boardFilterLabel(next)}.`);
+      return next;
+    });
+  }, [addTurn]);
+
+  const toggleAttentionMode = useCallback(() => {
+    setAttentionMode((prev) => {
+      const next = !prev;
+      addTurn("system", next ? "Attention mode on: showing only critical panels." : "Attention mode off: full view restored.");
+      return next;
+    });
+  }, [addTurn]);
+
+  const toggleQuietMode = useCallback(() => {
+    setQuietMode((prev) => {
+      const next = !prev;
+      addTurn("system", next ? "Quiet mode on: hiding transcript and diagnostics." : "Quiet mode off: full view restored.");
+      return next;
+    });
+  }, [addTurn]);
+
+  const toggleGuideOverlay = useCallback(() => {
+    setShowGuideOverlay((prev) => !prev);
+  }, []);
+
+  const toggleSafeMode = useCallback(() => {
+    setSafeMode((prev) => {
+      const next = !prev;
+      addTurn("system", next ? "Safe mode on: high-risk actions are blocked." : "Safe mode off.");
+      return next;
+    });
+  }, [addTurn]);
+
+  const toggleGuidedMenu = useCallback(() => {
+    setShowGuidedMenu((prev) => !prev);
+  }, []);
+
+  const advanceOnboarding = useCallback(() => {
+    setShowOnboarding((prev) => (prev ? prev : true));
+    setOnboardingStep((prev) => {
+      const next = prev + 1;
+      if (next >= onboardingSteps.length) {
+        setShowOnboarding(false);
+        setOnboardingSeen(true);
+        return 0;
+      }
+      return next;
+    });
+  }, []);
+
+  const cycleFocusedWorkspace = useCallback((direction: "prev" | "next", rows: OpsRow[]) => {
+    if (!rows.length) return;
+    const currentIndex = focusedWorkspace
+      ? rows.findIndex((row) => row.name === focusedWorkspace)
+      : -1;
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+    const offset = direction === "prev" ? -1 : 1;
+    const nextIndex = (baseIndex + offset + rows.length) % rows.length;
+    const next = rows[nextIndex]?.name || "";
+    if (!next) return;
+    setFocusedWorkspace(next);
+    addTurn("system", `Focused workspace: ${next}.`);
+  }, [addTurn, focusedWorkspace]);
+
   const streamPhase = useCallback(async (label: string, detail?: string) => {
     await streamAssistantTurn(`${label}${detail ? `: ${detail}` : ""}`);
   }, [streamAssistantTurn]);
@@ -851,10 +1058,33 @@ function HatchRuntime(): JSX.Element {
     }
   }, []);
 
+  const refreshOps = useCallback(async () => {
+    const cfg = configState.data;
+    if (!cfg) {
+      setOpsState({ loading: false, error: null, data: null });
+      return;
+    }
+    const profiles = Array.isArray(cfg.profiles) ? cfg.profiles.map((p) => p.name) : [];
+    const activeWorkspace = String(cfg.activeProfile || "default").trim() || "default";
+    setOpsState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const snapshot = await loadOpsSnapshot(profiles, activeWorkspace);
+      setOpsState({ loading: false, error: null, data: snapshot });
+      setOpsUpdatedAt(new Date().toISOString());
+    } catch (err) {
+      setOpsState({ loading: false, error: String((err as Error)?.message || err), data: null });
+    }
+  }, [configState.data]);
+
   useEffect(() => {
     void refreshConfig();
     void refreshLogs();
   }, [refreshConfig, refreshLogs]);
+
+  useEffect(() => {
+    if (!configState.data) return;
+    void refreshOps();
+  }, [configState.data, refreshOps]);
 
   useEffect(() => {
     if (handoffDone) return;
@@ -882,6 +1112,14 @@ function HatchRuntime(): JSX.Element {
     }, 5000);
     return () => clearInterval(id);
   }, [refreshLogs]);
+
+  useEffect(() => {
+    if (!configState.data) return undefined;
+    const id = setInterval(() => {
+      void refreshOps();
+    }, 10000);
+    return () => clearInterval(id);
+  }, [configState.data, refreshOps]);
 
   useEffect(() => {
     let active = true;
@@ -944,6 +1182,13 @@ function HatchRuntime(): JSX.Element {
     memory.sessionId,
     memory.unresolved
   ]);
+
+  useEffect(() => {
+    if (onboardingSeen || showOnboarding) return;
+    if (!memory.loaded || logsState.loading) return;
+    const hasHistory = chatTurns.length > 2 || logsState.data.length > 0;
+    if (!hasHistory) setShowOnboarding(true);
+  }, [chatTurns.length, logsState.data.length, logsState.loading, memory.loaded, onboardingSeen, showOnboarding]);
 
   const runExecution = useCallback(async (intentOverride?: ParsedIntent): Promise<void> => {
     const intent = intentOverride || state.currentIntent;
@@ -1075,6 +1320,38 @@ function HatchRuntime(): JSX.Element {
   }, [rememberIntent, runExecution, state.showDetails, streamAssistantTurn]);
 
   const config = configState.data;
+  const opsSnapshot = opsState.data;
+  const opsWorkspaces = opsSnapshot?.workspaces ?? [];
+  const activeWorkspaceName = String(opsSnapshot?.activeWorkspace || config?.activeProfile || "").trim();
+  const opsApprovalsOpen = opsWorkspaces.reduce((acc, row) => acc + (row.approvalsOpen || 0), 0);
+  const opsAlertsOpen = opsWorkspaces.reduce((acc, row) => acc + (row.alertsOpen || 0), 0);
+  const opsNeedsAttention = opsWorkspaces.filter((row) => row.approvalsOpen > 0 || row.alertsOpen > 0).length;
+  const attentionOpsWorkspaces = opsWorkspaces.filter((row) => row.approvalsOpen > 0 || row.alertsOpen > 0);
+  const opsBoardView = boardFilterLabel(boardFilter);
+  const filteredOpsWorkspaces = opsWorkspaces.filter((row) => {
+    if (boardFilter === "attention") return row.approvalsOpen > 0 || row.alertsOpen > 0;
+    if (boardFilter === "clear") return row.approvalsOpen === 0 && row.alertsOpen === 0;
+    return true;
+  });
+  const opsFocusRows = attentionMode ? attentionOpsWorkspaces : filteredOpsWorkspaces;
+  const opsRowsToShow = opsFocusRows;
+  const opsViewLabel = attentionMode ? "needs attention" : opsBoardView;
+  const defaultFocusedName = opsFocusRows.find((row) => row.name === activeWorkspaceName)?.name
+    || opsFocusRows[0]?.name
+    || "";
+  const resolvedFocusedName = focusedWorkspace && opsFocusRows.some((row) => row.name === focusedWorkspace)
+    ? focusedWorkspace
+    : defaultFocusedName;
+  const focusedOpsWorkspace = resolvedFocusedName
+    ? opsFocusRows.find((row) => row.name === resolvedFocusedName)
+    : undefined;
+  const focusedNextCommand = focusedOpsWorkspace ? buildOpsNextCommand(focusedOpsWorkspace) : "";
+  const focusedApprovalsCommand = focusedOpsWorkspace
+    ? `social ops approvals list --workspace ${focusedOpsWorkspace.name} --open`
+    : "";
+  const focusedAlertsCommand = focusedOpsWorkspace
+    ? `social ops alerts list --workspace ${focusedOpsWorkspace.name} --open`
+    : "";
   const waba = config?.waba || {
     connected: false,
     businessId: "",
@@ -1126,6 +1403,11 @@ function HatchRuntime(): JSX.Element {
         ? { label: "Check status", command: "status" }
         : { label: "Run doctor", command: "social doctor" };
   const authIssue = Boolean(lastError && isSetupOrAuthError(lastError));
+
+  useEffect(() => {
+    if (!resolvedFocusedName || resolvedFocusedName === focusedWorkspace) return;
+    setFocusedWorkspace(resolvedFocusedName);
+  }, [focusedWorkspace, resolvedFocusedName]);
 
   const parseAndQueueIntent = useCallback(async (raw: string): Promise<void> => {
     const input = String(raw || "").trim();
@@ -1700,6 +1982,10 @@ function HatchRuntime(): JSX.Element {
         await streamAssistantTurn("Missing required slots. Press e and provide key=value.");
         return;
       }
+      if (safeMode && state.currentRisk === "HIGH") {
+        await streamAssistantTurn("Safe mode is on. High-risk actions are blocked. Press m to disable safe mode.");
+        return;
+      }
       if (state.currentRisk === "HIGH") {
         dispatch({ type: "HIGH_CONFIRM_STEP_1" });
         await streamAssistantTurn("High-risk action: provide approval reason, then press Enter.");
@@ -1711,6 +1997,10 @@ function HatchRuntime(): JSX.Element {
     }
 
     if (state.phase === "HIGH_RISK_APPROVAL") {
+      if (safeMode) {
+        await streamAssistantTurn("Safe mode is on. High-risk actions are blocked. Press m to disable safe mode.");
+        return;
+      }
       if (!state.approvalReason.trim()) {
         await streamAssistantTurn("Approval reason required for high-risk action.");
         return;
@@ -1723,7 +2013,7 @@ function HatchRuntime(): JSX.Element {
     if (state.phase === "RESULT" || state.phase === "REJECTED") {
       dispatch({ type: "RESET_FLOW" });
     }
-  }, [parseAndQueueIntent, runExecution, state, streamAssistantTurn]);
+  }, [parseAndQueueIntent, runExecution, safeMode, state, streamAssistantTurn]);
 
   const replaySuggestions = useMemo(() => {
     if (state.phase !== "INPUT") return [] as PersistedLog[];
@@ -1745,6 +2035,12 @@ function HatchRuntime(): JSX.Element {
       if (key.escape || input === "/" || input === "q") {
         setShowPalette(false);
         setPaletteQuery("");
+      }
+      return;
+    }
+    if (showGuidedMenu) {
+      if (key.escape || input === "w" || input === "q") {
+        setShowGuidedMenu(false);
       }
       return;
     }
@@ -1806,6 +2102,77 @@ function HatchRuntime(): JSX.Element {
         addTurn("assistant", "Rejected.");
       },
       onToggleRail: () => setRightRailCollapsed((prev) => !prev),
+      onToggleBoardFilter: () => toggleBoardFilter(),
+      onToggleAttentionMode: () => toggleAttentionMode(),
+      onToggleSafeMode: () => toggleSafeMode(),
+      onFocusPrev: () => cycleFocusedWorkspace("prev", opsFocusRows),
+      onFocusNext: () => cycleFocusedWorkspace("next", opsFocusRows),
+      onFocusRun: () => {
+        if (!focusedOpsWorkspace) {
+          addTurn("system", "No focused workspace yet.");
+          return;
+        }
+        if (!focusedNextCommand) {
+          addTurn("system", `No next action for ${focusedOpsWorkspace.name}.`);
+          return;
+        }
+        dispatch({ type: "SET_INPUT", value: focusedNextCommand });
+        void parseAndQueueIntent(focusedNextCommand);
+      },
+      onFocusActivate: () => {
+        if (!focusedOpsWorkspace) {
+          addTurn("system", "No focused workspace yet.");
+          return;
+        }
+        if (focusedOpsWorkspace.name === activeWorkspaceName) {
+          addTurn("system", `Already on workspace ${focusedOpsWorkspace.name}.`);
+          return;
+        }
+        const command = `social accounts switch ${focusedOpsWorkspace.name}`;
+        dispatch({ type: "SET_INPUT", value: command });
+        void parseAndQueueIntent(command);
+      },
+      onFocusApprovals: () => {
+        if (!focusedOpsWorkspace) {
+          addTurn("system", "No focused workspace yet.");
+          return;
+        }
+        dispatch({ type: "SET_INPUT", value: focusedApprovalsCommand });
+        void parseAndQueueIntent(focusedApprovalsCommand);
+      },
+      onFocusAlerts: () => {
+        if (!focusedOpsWorkspace) {
+          addTurn("system", "No focused workspace yet.");
+          return;
+        }
+        dispatch({ type: "SET_INPUT", value: focusedAlertsCommand });
+        void parseAndQueueIntent(focusedAlertsCommand);
+      },
+      onToggleQuietMode: () => toggleQuietMode(),
+      onHelpFix: () => {
+        const command = missingSetup.length > 0 || authIssue
+          ? "guided setup"
+          : lastError
+            ? "fix last error"
+            : unresolvedCount > 0
+              ? "status"
+              : "social doctor";
+        dispatch({ type: "SET_INPUT", value: command });
+        void parseAndQueueIntent(command);
+      },
+      onToggleGuideOverlay: () => toggleGuideOverlay(),
+      onPanicSummary: () => {
+        const summary = buildPanicSummary();
+        setPanicSummary({ text: summary, at: new Date().toISOString() });
+        addTurn("assistant", `COPY BLOCK:\n${summary}`);
+      },
+      onDiagnosticPack: () => addTurn("assistant", buildDiagnosticPack()),
+      onToggleGuidedMenu: () => toggleGuidedMenu(),
+      onAdvanceOnboarding: () => advanceOnboarding(),
+      onFixNow: () => {
+        dispatch({ type: "SET_INPUT", value: fixNowAction.command });
+        void parseAndQueueIntent(fixNowAction.command);
+      },
       onPaletteToggle: () => {
         setPaletteQuery("");
         setShowPalette(true);
@@ -1972,6 +2339,105 @@ function HatchRuntime(): JSX.Element {
   const recentRollbacks = state.rollbackHistory.slice(-5);
   const resultPreview = state.results ? JSON.stringify(state.results, null, 2) : "";
   const openItems = memory.unresolved.slice(0, 3);
+  const lastRun = logItems[0];
+  const lastRunStatus: "OK" | "FAIL" | "SKIP" = lastRun ? (lastRun.success ? "OK" : "FAIL") : "SKIP";
+  const lastRunTone = lastRun ? (lastRun.success ? theme.success : theme.error) : theme.muted;
+  const lastRunBorder = lastRun ? (lastRun.success ? theme.success : theme.error) : theme.muted;
+  const lastRunTime = lastRun ? formatOpsTime(lastRun.timestamp) : "not run";
+  const lastRunAction = lastRun ? lastRun.action : "none yet";
+  const lastRunError = lastRun?.error ? shortText(lastRun.error, 140) : "";
+  const safeModeLabel = safeMode ? "on" : "off";
+  const opsUpdatedLabel = opsUpdatedAt ? formatOpsTime(opsUpdatedAt) : "never";
+  const confidenceTierLabel = confidenceTier(state.currentConfidence);
+  const confidenceTone = confidenceTierLabel === "high"
+    ? theme.success
+    : confidenceTierLabel === "medium"
+      ? theme.warning
+      : confidenceTierLabel === "low"
+        ? theme.error
+        : theme.muted;
+  const confidenceHumanLabel = confidenceTierLabel === "high"
+    ? "High"
+    : confidenceTierLabel === "medium"
+      ? "Medium"
+      : confidenceTierLabel === "low"
+        ? "Low"
+        : "Unknown";
+  const nextGuideCommand = missingSetup.length > 0 || authIssue
+    ? "guided setup"
+    : lastError
+      ? "fix last error"
+      : unresolvedCount > 0
+        ? "open 1"
+        : nextAction?.command || "social doctor";
+  const nextGuideTitle = missingSetup.length > 0
+    ? "Finish setup"
+    : lastError
+      ? "Fix the last error"
+      : unresolvedCount > 0
+        ? "Clear open items"
+        : attentionOpsWorkspaces.length > 0
+          ? "Review workspaces needing attention"
+          : "You are ready";
+  const nextGuideDetail = missingSetup.length > 0
+    ? "We need a few setup steps before everything works."
+    : lastError
+      ? "The last action failed. Let's resolve it."
+      : unresolvedCount > 0
+        ? "There are open items waiting on you."
+        : attentionOpsWorkspaces.length > 0
+          ? "Some workspaces still need attention."
+          : "No blockers right now.";
+  const attentionClear = !lastError && missingSetup.length === 0 && openItems.length === 0 && attentionOpsWorkspaces.length === 0;
+  const onboardingContent = onboardingSteps[Math.min(onboardingStep, onboardingSteps.length - 1)];
+  const errorSuggestions = lastError ? buildErrorActionSuggestions(lastError, authIssue) : [];
+  const guidedMenuOptions = useMemo(() => {
+    const options = [
+      { label: "Guided setup (recommended)", value: "guided setup" },
+      { label: "Check status", value: "status" },
+      { label: "Run doctor", value: "social doctor" },
+      { label: "Next step", value: nextGuideCommand },
+      focusedOpsWorkspace
+        ? { label: `Review approvals (${focusedOpsWorkspace.name})`, value: focusedApprovalsCommand }
+        : null,
+      focusedOpsWorkspace
+        ? { label: `Review alerts (${focusedOpsWorkspace.name})`, value: focusedAlertsCommand }
+        : null,
+      { label: "Send a WhatsApp message", value: "send message" },
+      { label: "Create a post", value: "create post" }
+    ].filter((item): item is { label: string; value: string } => Boolean(item && item.value));
+
+    const seen = new Set<string>();
+    return options.filter((item) => {
+      if (seen.has(item.value)) return false;
+      seen.add(item.value);
+      return true;
+    });
+  }, [focusedAlertsCommand, focusedApprovalsCommand, focusedOpsWorkspace, nextGuideCommand]);
+  const hotkeyTips = useMemo(() => {
+    const tips: string[] = [];
+    tips.push("z fix now");
+    if (missingSetup.length > 0 || authIssue || lastError) tips.push("h help fix");
+    tips.push(showGuideOverlay ? "i hide guide" : "i show guide");
+    tips.push(showGuidedMenu ? "w close menu" : "w menu");
+    tips.push(showOnboarding ? "t next tutorial" : "t tutorial");
+    tips.push(safeMode ? "m safe mode on" : "m safe mode off");
+    if (openItems.length > 0) tips.push(`1-${Math.min(3, openItems.length)} open item`);
+    if (focusedOpsWorkspace) tips.push("f run focus");
+    if (opsWorkspaces.length > 0) tips.push("b board");
+    return tips.slice(0, 5);
+  }, [
+    authIssue,
+    focusedOpsWorkspace,
+    lastError,
+    missingSetup.length,
+    openItems.length,
+    opsWorkspaces.length,
+    safeMode,
+    showGuideOverlay,
+    showGuidedMenu,
+    showOnboarding
+  ]);
   const focusTone = missingSetup.length
     ? theme.warning
     : lastError
@@ -2028,6 +2494,115 @@ function HatchRuntime(): JSX.Element {
   const lastActionLabel = recentFail
     ? `${recentFail.action}${recentFail.error ? ` — ${shortText(recentFail.error, 90)}` : ""}`
     : "";
+  const fixNowAction = (() => {
+    if (missingSetup.length > 0 || authIssue) {
+      return { label: "Run guided setup", command: "guided setup" };
+    }
+    if (lastError) {
+      return { label: "Fix last error", command: "fix last error" };
+    }
+    if (unresolvedCount > 0) {
+      return { label: "Open first item", command: "open 1" };
+    }
+    if (opsNeedsAttention > 0) {
+      if (focusedOpsWorkspace?.approvalsOpen) {
+        return { label: "Review approvals", command: focusedApprovalsCommand };
+      }
+      if (focusedOpsWorkspace?.alertsOpen) {
+        return { label: "Review alerts", command: focusedAlertsCommand };
+      }
+      return { label: "Review ops center", command: "social ops center" };
+    }
+    return { label: "Run doctor", command: "social doctor" };
+  })();
+
+  const buildPanicSummary = useCallback(() => {
+    const lines = [
+      "PANIC SUMMARY",
+      `time: ${formatOpsTime(new Date().toISOString())}`,
+      `profile: ${config?.activeProfile || "default"}`,
+      `safe mode: ${safeModeLabel} | attention: ${attentionMode ? "on" : "off"} | quiet: ${quietMode ? "on" : "off"}`,
+      `last action: ${lastRunAction} (${lastRunStatus}) at ${lastRunTime}`,
+      `error: ${lastRunError || "none"}`,
+      `open items: ${unresolvedCount}`,
+      `ops attention: ${opsNeedsAttention}/${opsWorkspaces.length}`,
+      `ops updated: ${opsUpdatedLabel}`
+    ];
+    const recent = logItems.slice(0, 3).map((item) => (
+      `${item.success ? "OK" : "FAIL"} ${item.action} @ ${shortTime(item.timestamp)}${item.error ? ` — ${shortText(item.error, 80)}` : ""}`
+    ));
+    if (recent.length) {
+      lines.push("recent logs:");
+      lines.push(...recent);
+    }
+    return lines.join("\n");
+  }, [
+    attentionMode,
+    config?.activeProfile,
+    lastRunAction,
+    lastRunError,
+    lastRunStatus,
+    lastRunTime,
+    logItems,
+    opsNeedsAttention,
+    opsUpdatedLabel,
+    opsWorkspaces.length,
+    quietMode,
+    safeModeLabel,
+    unresolvedCount
+  ]);
+
+  const buildDiagnosticPack = useCallback(() => {
+    const lines = [
+      "SOCIAL FLOW DIAGNOSTIC PACK",
+      `generated: ${formatOpsTime(new Date().toISOString())}`,
+      `profile: ${config?.activeProfile || "default"}`,
+      `token: ${tokenOk ? "ok" : "missing"} | waba: ${wabaOk ? "ok" : "missing"} | webhook: ${webhookBadge}`,
+      `safe mode: ${safeModeLabel} | attention: ${attentionMode ? "on" : "off"} | quiet: ${quietMode ? "on" : "off"}`,
+      `last action: ${lastRunAction} (${lastRunStatus}) at ${lastRunTime}`,
+      `last error: ${lastRunError || "none"}`,
+      `setup gaps: ${missingSetup.length}`,
+      `open items: ${unresolvedCount}`,
+      `ops updated: ${opsUpdatedLabel}`,
+      `ops attention: ${opsNeedsAttention}/${opsWorkspaces.length}`
+    ];
+    const opsRows = opsWorkspaces.slice(0, 5).map((row) => (
+      `- ${row.name}: approvals=${row.approvalsOpen} alerts=${row.alertsOpen} last_check=${row.lastMorningRunDate || "not run"} next=${row.nextAction}`
+    ));
+    if (opsRows.length) {
+      lines.push("ops workspaces:");
+      lines.push(...opsRows);
+      if (opsWorkspaces.length > opsRows.length) {
+        lines.push(`...and ${opsWorkspaces.length - opsRows.length} more`);
+      }
+    }
+    const recent = logItems.slice(0, 5).map((item) => (
+      `${item.success ? "OK" : "FAIL"} ${item.action} @ ${shortTime(item.timestamp)}${item.error ? ` — ${shortText(item.error, 120)}` : ""}`
+    ));
+    if (recent.length) {
+      lines.push("recent logs:");
+      lines.push(...recent);
+    }
+    return lines.join("\n");
+  }, [
+    attentionMode,
+    config?.activeProfile,
+    lastRunAction,
+    lastRunError,
+    lastRunStatus,
+    lastRunTime,
+    logItems,
+    missingSetup.length,
+    opsNeedsAttention,
+    opsUpdatedLabel,
+    opsWorkspaces,
+    quietMode,
+    safeModeLabel,
+    tokenOk,
+    unresolvedCount,
+    wabaOk,
+    webhookBadge
+  ]);
   const paletteOptions = [
     ...quickActions.map((item) => ({ label: `Quick: ${item.label}`, value: item.command, show: true })),
     ...setupFixActions.map((item) => ({ label: `Setup: ${item.label}`, value: item.command, show: true })),
@@ -2036,6 +2611,8 @@ function HatchRuntime(): JSX.Element {
     lastError ? { label: "Fix last error", value: "fix last error", show: true } : null,
     { label: "Doctor", value: "doctor", show: true },
     { label: "Status", value: "status", show: true },
+    { label: "Ops center", value: "social ops center", show: true },
+    { label: "Workspace check", value: "social accounts check --only needs-setup", show: true },
     { label: "Why this plan", value: "__why__", show: true },
     { label: "WABA setup guide", value: "waba setup", show: true },
     { label: "WABA send example", value: "social waba send --from PHONE_ID --to +15551234567 --body \"Hello\"", show: true },
@@ -2071,51 +2648,131 @@ function HatchRuntime(): JSX.Element {
         <Text color={theme.muted}> webhook </Text>
         <Text color={theme.muted}>| profile {config?.activeProfile || "default"}</Text>
       </Box>
-      <SectionHeading label="Social Flow hatch" />
-      <FramedBlock title="Runtime">
-        <Text color={theme.text}>
-          profile {config?.activeProfile || "default"} | session {shortText(memory.sessionId, 22)} | connected {connectedCount}/3 | ai {aiLabel}
-        </Text>
-        <Text color={phaseTone}>
-          phase {state.phase.toLowerCase()} | risk {(state.currentRisk || "LOW").toLowerCase()} | confidence {confidenceLabel} | account {selectedAccount}
-        </Text>
-        <Text color={theme.muted}>
-          industry {industryLabel} | memory {memoryLabel} | open items {unresolvedCount} | runtime {runtimeLabel}
-        </Text>
-        <Text color={readinessTone}>readiness {readinessLabel}</Text>
-        <Text color={theme.muted}>
-          setup progress {setupProgress} ({readyCount}/{setupChecklist.length})
-        </Text>
-        {missingSetup.length ? (
-          <Text color={theme.warning}>next: {nextSetupLabel}</Text>
-        ) : null}
-        {missingSetup.length ? (
-          <Box marginTop={1} flexDirection="column">
-            <Text color={theme.warning}>setup checklist</Text>
-            {setupChecklist.map((item) => (
-              <Box key={item.label} flexDirection="column">
-                <Box>
-                  <StatusBadge label={item.ok ? "OK" : "FAIL"} tone={item.ok ? "ok" : "fail"} />
-                  <Text color={item.ok ? theme.text : theme.warning}>
-                    {" "}{item.label}{item.ok ? "" : item.fix ? ` -> ${item.fix}` : ""}
-                  </Text>
-                </Box>
-                {!item.ok && item.hint ? <Text color={theme.muted}>  {item.hint}</Text> : null}
-              </Box>
-            ))}
-          </Box>
+      <SectionHeading label="Last action" />
+      <FramedBlock title="Last action" borderColor={lastRunBorder}>
+        {lastRun ? (
+          <>
+            <Box>
+              <StatusBadge label={lastRunStatus} tone={lastRun.success ? "ok" : "fail"} />
+              <Text color={lastRunTone}> {lastRunAction}</Text>
+            </Box>
+            <Text color={theme.muted}>time {lastRunTime}</Text>
+            <Text color={confidenceTone}>confidence {confidenceHumanLabel} ({confidenceLabel})</Text>
+            {lastRunError ? (
+              <Text color={theme.warning}>error: {lastRunError}</Text>
+            ) : null}
+            <Text color={theme.muted}>
+              {lastRun.success
+                ? "All good. Tip: press n for the next step."
+                : "Needs attention. Tip: type \"fix last error\" or \"replay latest\"."}
+            </Text>
+          </>
         ) : (
-          <Box>
-            <StatusBadge label="OK" tone="ok" />
-            <Text color={theme.success}> setup checklist: all green.</Text>
-          </Box>
+          <>
+            <Box>
+              <StatusBadge label="SKIP" tone="skip" />
+              <Text color={theme.muted}> No actions yet.</Text>
+            </Box>
+            <Text color={confidenceTone}>confidence {confidenceHumanLabel} ({confidenceLabel})</Text>
+            <Text color={theme.muted}>Try: guided setup | status | social doctor</Text>
+          </>
         )}
-        <Text color={theme.muted}>
-          latest {topActivity ? `${shortTime(topActivity.at)} ${topActivity.message.slice(0, 72)}` : "idle"}
-        </Text>
-        {configState.loading ? <Text color={theme.muted}>config loading...</Text> : null}
-        {configState.error ? <Text color={theme.error}>config error: {configState.error}</Text> : null}
       </FramedBlock>
+      {showGuideOverlay ? (
+        <>
+          <SectionHeading label="Next step guide" />
+          <FramedBlock title="Next step" borderColor={theme.accent}>
+            <Text color={theme.text}>{nextGuideTitle}</Text>
+            <Text color={theme.muted}>{nextGuideDetail}</Text>
+            <Text color={theme.accent}>Do this: {nextGuideCommand}</Text>
+            <Text color={theme.muted}>Tip: press h for help fixing issues.</Text>
+            <Text color={theme.muted}>Tip: press i to hide this guide.</Text>
+          </FramedBlock>
+        </>
+      ) : null}
+      {panicSummary ? (
+        <>
+          <SectionHeading label="Copy block" />
+          <FramedBlock title={`Panic summary (${formatOpsTime(panicSummary.at)})`} borderColor={theme.warning}>
+            <Text color={theme.warning}>Copy everything below and paste it into support.</Text>
+            <Box marginTop={1} flexDirection="column">
+              {panicSummary.text.split("\n").map((line, idx) => (
+                <Text key={`panic-${idx}`} color={theme.muted}>{line}</Text>
+              ))}
+            </Box>
+            <Text color={theme.muted}>Tip: press p to refresh this summary.</Text>
+          </FramedBlock>
+        </>
+      ) : null}
+      {showOnboarding ? (
+        <>
+          <SectionHeading label="Getting started" />
+          <FramedBlock title={`Step ${onboardingStep + 1}/${onboardingSteps.length}`} borderColor={theme.accent}>
+            <Text color={theme.text}>{onboardingContent.title}</Text>
+            <Text color={theme.muted}>{onboardingContent.detail}</Text>
+            <Text color={theme.accent}>{onboardingContent.action}</Text>
+            <Text color={theme.muted}>Press t to continue.</Text>
+            <Text color={theme.muted}>Tip: press w for the guided menu.</Text>
+          </FramedBlock>
+        </>
+      ) : null}
+      {attentionMode ? (
+        <>
+          <SectionHeading label="Attention mode" />
+          <FramedBlock title="Attention mode" borderColor={theme.warning}>
+          <Text color={theme.warning}>Showing only critical panels.</Text>
+          <Text color={theme.muted}>Press c to return to the full view. Press v for quiet mode.</Text>
+          </FramedBlock>
+        </>
+      ) : (
+        <>
+          <SectionHeading label="Social Flow hatch" />
+          <FramedBlock title="Runtime">
+            <Text color={theme.text}>
+              profile {config?.activeProfile || "default"} | session {shortText(memory.sessionId, 22)} | connected {connectedCount}/3 | ai {aiLabel}
+            </Text>
+        <Text color={phaseTone}>
+          phase {state.phase.toLowerCase()} | risk {(state.currentRisk || "LOW").toLowerCase()} | confidence {confidenceLabel} | safe {safeModeLabel} | account {selectedAccount}
+        </Text>
+            <Text color={theme.muted}>
+              industry {industryLabel} | memory {memoryLabel} | open items {unresolvedCount} | runtime {runtimeLabel}
+            </Text>
+            <Text color={readinessTone}>readiness {readinessLabel}</Text>
+            <Text color={theme.muted}>
+              setup progress {setupProgress} ({readyCount}/{setupChecklist.length})
+            </Text>
+            {missingSetup.length ? (
+              <Text color={theme.warning}>next: {nextSetupLabel}</Text>
+            ) : null}
+            {missingSetup.length ? (
+              <Box marginTop={1} flexDirection="column">
+                <Text color={theme.warning}>setup checklist</Text>
+                {setupChecklist.map((item) => (
+                  <Box key={item.label} flexDirection="column">
+                    <Box>
+                      <StatusBadge label={item.ok ? "OK" : "FAIL"} tone={item.ok ? "ok" : "fail"} />
+                      <Text color={item.ok ? theme.text : theme.warning}>
+                        {" "}{item.label}{item.ok ? "" : item.fix ? ` -> ${item.fix}` : ""}
+                      </Text>
+                    </Box>
+                    {!item.ok && item.hint ? <Text color={theme.muted}>  {item.hint}</Text> : null}
+                  </Box>
+                ))}
+              </Box>
+            ) : (
+              <Box>
+                <StatusBadge label="OK" tone="ok" />
+                <Text color={theme.success}> setup checklist: all green.</Text>
+              </Box>
+            )}
+            <Text color={theme.muted}>
+              latest {topActivity ? `${shortTime(topActivity.at)} ${topActivity.message.slice(0, 72)}` : "idle"}
+            </Text>
+            {configState.loading ? <Text color={theme.muted}>config loading...</Text> : null}
+            {configState.error ? <Text color={theme.error}>config error: {configState.error}</Text> : null}
+          </FramedBlock>
+        </>
+      )}
 
       {lastError ? (
         <>
@@ -2131,17 +2788,168 @@ function HatchRuntime(): JSX.Element {
               <Text color={theme.muted}>Tip: open items take 1-3; type the recovery commands below.</Text>
             )}
             <Text color={theme.muted}>Commands: fix last error | replay latest | logs limit 20</Text>
+            {errorSuggestions.length ? (
+              <Box marginTop={1} flexDirection="column">
+                <Text color={theme.accent}>Try this next</Text>
+                {errorSuggestions.map((item) => (
+                  <Box key={item.command} marginTop={1} flexDirection="column">
+                    <Text color={theme.text}>{item.label}</Text>
+                    {item.detail ? <Text color={theme.muted}>{item.detail}</Text> : null}
+                    <Text color={theme.muted}>copy: {item.command}</Text>
+                  </Box>
+                ))}
+                <Text color={theme.muted}>Tip: press z to run Fix it now.</Text>
+              </Box>
+            ) : null}
           </FramedBlock>
         </>
       ) : null}
 
-      {configState.loading ? null : (
+      {configState.loading ? null : attentionMode ? (
+        <>
+          {missingSetup.length ? (
+            <>
+              <SectionHeading label="Setup needs attention" />
+              <FramedBlock title="Setup gaps" borderColor={theme.warning}>
+                {missingSetup.map((item) => (
+                  <Box key={item.label} marginTop={1} flexDirection="column">
+                    <Box>
+                      <Text color={theme.warning}>NEEDS {item.label}</Text>
+                    </Box>
+                    {item.hint ? <Text color={theme.muted}>{item.hint}</Text> : null}
+                    {item.fix ? <Text color={theme.accent}>Do this (copy/paste): {item.fix}</Text> : null}
+                  </Box>
+                ))}
+              </FramedBlock>
+            </>
+          ) : null}
+
+          <SectionHeading label="Agency board" />
+          <FramedBlock title="Ops center">
+            {opsState.loading ? <Text color={theme.muted}>loading ops center...</Text> : null}
+            {opsState.error ? <Text color={theme.error}>ops center error: {opsState.error}</Text> : null}
+            {!opsState.loading && !opsState.error ? (
+              opsWorkspaces.length ? (
+                <Box flexDirection="column">
+                  <Text color={theme.muted}>
+                    workspaces {opsWorkspaces.length} | approvals {opsApprovalsOpen} | alerts {opsAlertsOpen} | needs attention {opsNeedsAttention} | updated {opsUpdatedLabel}
+                  </Text>
+                  <Text color={theme.muted}>
+                    {attentionMode
+                      ? `attention mode: ${opsViewLabel} | showing ${opsRowsToShow.length} of ${opsWorkspaces.length}`
+                      : `view ${opsViewLabel} (press b to toggle) | showing ${opsRowsToShow.length} of ${opsWorkspaces.length}`}
+                  </Text>
+                  {opsRowsToShow.length ? (
+                    opsRowsToShow.map((row) => {
+                      const isActive = row.name === activeWorkspaceName;
+                      const isFocused = row.name === resolvedFocusedName;
+                      const approvalsTone = row.approvalsOpen > 0 ? "fail" : "ok";
+                      const alertsTone = row.alertsOpen > 0 ? "fail" : "ok";
+                      const lastCheck = row.lastMorningRunDate ? row.lastMorningRunDate : "not run";
+                      const lastActivity = row.lastActivity ? formatOpsTime(row.lastActivity) : "none";
+                      const nextCommand = buildOpsNextCommand(row);
+                      return (
+                        <Box key={row.name} marginTop={1} flexDirection="column">
+                          <Box>
+                            <Text color={isActive ? theme.success : theme.text}>
+                              {row.name}{isActive ? " (active)" : ""}{isFocused ? " [focus]" : ""}
+                            </Text>
+                            <Text color={theme.muted}> approvals </Text>
+                            <StatusBadge label={row.approvalsOpen > 0 ? "FAIL" : "OK"} tone={approvalsTone} />
+                            <Text color={theme.muted}> {row.approvalsOpen} </Text>
+                            <Text color={theme.muted}> alerts </Text>
+                            <StatusBadge label={row.alertsOpen > 0 ? "FAIL" : "OK"} tone={alertsTone} />
+                            <Text color={theme.muted}> {row.alertsOpen}</Text>
+                          </Box>
+                          <Text color={theme.muted}>last check {lastCheck} | last activity {lastActivity}</Text>
+                          <Text color={theme.muted}>next: {row.nextAction}</Text>
+                          {nextCommand ? (
+                            <Text color={theme.accent}>Run: {nextCommand}</Text>
+                          ) : null}
+                        </Box>
+                      );
+                    })
+                  ) : (
+                    <Text color={theme.muted}>
+                      {attentionMode ? "No workspaces need attention." : "No workspaces match this view. Press b to show all."}
+                    </Text>
+                  )}
+                  {focusedOpsWorkspace ? (
+                    <Box marginTop={1} flexDirection="column">
+                      <Text color={theme.accent}>Focused workspace</Text>
+                      <Text color={theme.text}>
+                        {focusedOpsWorkspace.name}{focusedOpsWorkspace.name === activeWorkspaceName ? " (active)" : ""}
+                      </Text>
+                      <Text color={theme.muted}>
+                        approvals {focusedOpsWorkspace.approvalsOpen} | alerts {focusedOpsWorkspace.alertsOpen} | last check {focusedOpsWorkspace.lastMorningRunDate || "not run"} | last activity {focusedOpsWorkspace.lastActivity ? formatOpsTime(focusedOpsWorkspace.lastActivity) : "none"}
+                      </Text>
+                      <Text color={theme.muted}>next: {focusedOpsWorkspace.nextAction}</Text>
+                      {focusedNextCommand ? (
+                        <Text color={theme.accent}>Run: {focusedNextCommand}</Text>
+                      ) : null}
+                      <Text color={theme.accent}>Approvals (a): {focusedApprovalsCommand}</Text>
+                      <Text color={theme.accent}>Alerts (e): {focusedAlertsCommand}</Text>
+                      <Text color={theme.muted}>Tip: press s to switch to the focused workspace.</Text>
+                    </Box>
+                  ) : null}
+                  <Text color={theme.muted}>Tip: press b to filter to needs attention or all clear.</Text>
+                  <Text color={theme.muted}>Tip: press [ and ] to move focus across workspaces.</Text>
+                  <Text color={theme.muted}>Tip: press f to run the focused workspace next action.</Text>
+                  <Text color={theme.muted}>Tip: press s to switch to the focused workspace.</Text>
+                  <Text color={theme.muted}>Tip: press a for approvals, e for alerts.</Text>
+                  <Text color={theme.muted}>Tip: press c to toggle attention mode.</Text>
+                  <Text color={theme.muted}>Tip: press v for quiet mode.</Text>
+                  <Text color={theme.muted}>Tip: press h for help fixing issues.</Text>
+                  <Text color={theme.muted}>Tip: press i to show the next step guide.</Text>
+                  <Text color={theme.muted}>Tip: run "social ops center" for a full CLI view.</Text>
+                </Box>
+              ) : (
+                <Text color={theme.muted}>No workspaces found. Add one with: social accounts add &lt;name&gt;</Text>
+              )
+            ) : null}
+          </FramedBlock>
+
+          {openItems.length ? (
+            <>
+              <SectionHeading label="Open items" />
+              <FramedBlock title="Open items">
+                <Box marginTop={1} flexDirection="column">
+                  <Text color={theme.accent}>Open items</Text>
+                  {openItems.map((item, idx) => (
+                    <Box key={`${item.at}-${item.text}`}>
+                      <StatusBadge label="FAIL" tone="fail" />
+                      <Text color={theme.muted}>
+                        {" "}[{idx + 1}] {shortText(item.text, 90)} ({unresolvedHint(item)}) — open {idx + 1} | retry {idx + 1} | o{idx + 1} | r{idx + 1}
+                      </Text>
+                    </Box>
+                  ))}
+                  <Text color={theme.muted}>Tip: press 1-3 to open/retry an item quickly.</Text>
+                </Box>
+              </FramedBlock>
+            </>
+          ) : null}
+
+          {attentionClear ? (
+            <>
+              <SectionHeading label="All clear" />
+              <FramedBlock title="All clear" borderColor={theme.success}>
+                <Text color={theme.success}>No critical items right now.</Text>
+                <Text color={theme.muted}>Press c to return to the full view.</Text>
+              </FramedBlock>
+            </>
+          ) : null}
+        </>
+      ) : (
         <>
           <SectionHeading label="Focus" />
           <FramedBlock title="Next move" borderColor={focusTone}>
             <Text color={focusTone}>{focusTitle}</Text>
             <Text color={theme.muted}>{focusDetail}</Text>
             <Text color={theme.muted}>Reason: {focusReason}</Text>
+            <Box marginTop={1} flexDirection="column">
+              <Text color={theme.accent}>Fix it now: {fixNowAction.label}</Text>
+              <Text color={theme.muted}>press z or copy: {fixNowAction.command}</Text>
+            </Box>
             {lastActionLabel ? (
               <Text color={theme.muted}>Last failed action: {lastActionLabel}</Text>
             ) : null}
@@ -2149,18 +2957,17 @@ function HatchRuntime(): JSX.Element {
               <Box marginTop={1} flexDirection="column">
                 <Text color={theme.accent}>Suggested actions</Text>
                 {focusActions.map((action) => (
-                  <Text key={action.command} color={theme.muted}>
-                    - {action.label}: {action.command}
-                  </Text>
+                  <Box key={action.command} marginTop={1} flexDirection="column">
+                    <Text color={theme.text}>{action.label}</Text>
+                    <Text color={theme.muted}>copy: {action.command}</Text>
+                  </Box>
                 ))}
               </Box>
             ) : null}
             {nextAction ? (
-              <Box marginTop={1}>
-                <Text color={theme.text}>Next action: </Text>
-                <Text color={theme.text}>{nextAction.label}</Text>
-                <Text color={theme.muted}> — </Text>
-                <Text color={theme.accent}>{nextAction.command}</Text>
+              <Box marginTop={1} flexDirection="column">
+                <Text color={theme.text}>Next action: {nextAction.label}</Text>
+                <Text color={theme.muted}>copy: {nextAction.command}</Text>
               </Box>
             ) : null}
             <Text color={theme.muted}>Tip: press n to run the next action, or l to show logs.</Text>
@@ -2169,19 +2976,15 @@ function HatchRuntime(): JSX.Element {
           <SectionHeading label="Quick actions" />
           <FramedBlock title="Quick actions">
             {quickActions.map((item, idx) => (
-              <Box key={item.command}>
-                <Text color={theme.muted}>{`[${idx + 1}] `}</Text>
-                <Text color={theme.text}>{item.label}</Text>
-                <Text color={theme.muted}> — </Text>
-                <Text color={theme.accent}>{item.command}</Text>
+              <Box key={item.command} marginTop={1} flexDirection="column">
+                <Text color={theme.text}>{`[${idx + 1}] ${item.label}`}</Text>
+                <Text color={theme.muted}>copy: {item.command}</Text>
               </Box>
             ))}
             {nextAction ? (
-              <Box marginTop={1}>
-                <Text color={theme.text}>Next step: </Text>
-                <Text color={theme.text}>{nextAction.label}</Text>
-                <Text color={theme.muted}> — </Text>
-                <Text color={theme.accent}>{nextAction.command}</Text>
+              <Box marginTop={1} flexDirection="column">
+                <Text color={theme.text}>Next step: {nextAction.label}</Text>
+                <Text color={theme.muted}>copy: {nextAction.command}</Text>
               </Box>
             ) : null}
             <Text color={theme.muted}>Tip: copy/paste any line above into chat to run it.</Text>
@@ -2222,26 +3025,104 @@ function HatchRuntime(): JSX.Element {
             ) : null}
           </FramedBlock>
 
-          <SectionHeading label="Profiles" />
-          <FramedBlock title="Portfolio">
+          <SectionHeading label="Agency board" />
+          <FramedBlock title="Ops center">
+            {opsState.loading ? <Text color={theme.muted}>loading ops center...</Text> : null}
+            {opsState.error ? <Text color={theme.error}>ops center error: {opsState.error}</Text> : null}
+            {!opsState.loading && !opsState.error ? (
+              opsWorkspaces.length ? (
+                <Box flexDirection="column">
+                  <Text color={theme.muted}>
+                    workspaces {opsWorkspaces.length} | approvals {opsApprovalsOpen} | alerts {opsAlertsOpen} | needs attention {opsNeedsAttention}
+                  </Text>
+                  <Text color={theme.muted}>
+                    {attentionMode
+                      ? `attention mode: ${opsViewLabel} | showing ${opsRowsToShow.length} of ${opsWorkspaces.length}`
+                      : `view ${opsViewLabel} (press b to toggle) | showing ${opsRowsToShow.length} of ${opsWorkspaces.length}`}
+                  </Text>
+                  {opsRowsToShow.length ? (
+                    opsRowsToShow.map((row) => {
+                      const isActive = row.name === activeWorkspaceName;
+                      const isFocused = row.name === resolvedFocusedName;
+                      const approvalsTone = row.approvalsOpen > 0 ? "fail" : "ok";
+                      const alertsTone = row.alertsOpen > 0 ? "fail" : "ok";
+                      const lastCheck = row.lastMorningRunDate ? row.lastMorningRunDate : "not run";
+                      const lastActivity = row.lastActivity ? formatOpsTime(row.lastActivity) : "none";
+                      const nextCommand = buildOpsNextCommand(row);
+                      return (
+                        <Box key={row.name} marginTop={1} flexDirection="column">
+                          <Box>
+                            <Text color={isActive ? theme.success : theme.text}>
+                              {row.name}{isActive ? " (active)" : ""}{isFocused ? " [focus]" : ""}
+                            </Text>
+                            <Text color={theme.muted}> approvals </Text>
+                            <StatusBadge label={row.approvalsOpen > 0 ? "FAIL" : "OK"} tone={approvalsTone} />
+                            <Text color={theme.muted}> {row.approvalsOpen} </Text>
+                            <Text color={theme.muted}> alerts </Text>
+                            <StatusBadge label={row.alertsOpen > 0 ? "FAIL" : "OK"} tone={alertsTone} />
+                            <Text color={theme.muted}> {row.alertsOpen}</Text>
+                          </Box>
+                          <Text color={theme.muted}>last check {lastCheck} | last activity {lastActivity}</Text>
+                          <Text color={theme.muted}>next: {row.nextAction}</Text>
+                          {nextCommand ? (
+                            <Text color={theme.accent}>Run: {nextCommand}</Text>
+                          ) : null}
+                        </Box>
+                      );
+                    })
+                  ) : (
+                    <Text color={theme.muted}>
+                      {attentionMode ? "No workspaces need attention." : "No workspaces match this view. Press b to show all."}
+                    </Text>
+                  )}
+                  {focusedOpsWorkspace ? (
+                    <Box marginTop={1} flexDirection="column">
+                      <Text color={theme.accent}>Focused workspace</Text>
+                      <Text color={theme.text}>
+                        {focusedOpsWorkspace.name}{focusedOpsWorkspace.name === activeWorkspaceName ? " (active)" : ""}
+                      </Text>
+                      <Text color={theme.muted}>
+                        approvals {focusedOpsWorkspace.approvalsOpen} | alerts {focusedOpsWorkspace.alertsOpen} | last check {focusedOpsWorkspace.lastMorningRunDate || "not run"} | last activity {focusedOpsWorkspace.lastActivity ? formatOpsTime(focusedOpsWorkspace.lastActivity) : "none"}
+                      </Text>
+                      <Text color={theme.muted}>next: {focusedOpsWorkspace.nextAction}</Text>
+                      {focusedNextCommand ? (
+                        <Text color={theme.accent}>Run: {focusedNextCommand}</Text>
+                      ) : null}
+                      <Text color={theme.muted}>Tip: switch active workspace with "social accounts switch &lt;name&gt;".</Text>
+                    </Box>
+                  ) : null}
+                  <Text color={theme.muted}>Tip: press b to filter to needs attention or all clear.</Text>
+                  <Text color={theme.muted}>Tip: press [ and ] to move focus across workspaces.</Text>
+                  <Text color={theme.muted}>Tip: press f to run the focused workspace next action.</Text>
+                  <Text color={theme.muted}>Tip: press c to toggle attention mode.</Text>
+                  <Text color={theme.muted}>Tip: run "social ops center" for a full CLI view.</Text>
+                </Box>
+              ) : (
+                <Text color={theme.muted}>No workspaces found. Add one with: social accounts add &lt;name&gt;</Text>
+              )
+            ) : null}
+          </FramedBlock>
+
+          <SectionHeading label="Workspaces" />
+          <FramedBlock title="Access status">
             {profileSummary.length ? (
               profileSummary.map((p) => (
                 <Box key={p.name}>
                   <Text color={p.name === config?.activeProfile ? theme.success : theme.text}>
                     {p.name}{p.name === config?.activeProfile ? " (active)" : ""}
                   </Text>
-                  <Text color={theme.muted}> — token </Text>
+                  <Text color={theme.muted}> — access </Text>
                   <StatusBadge label={p.tokenSet ? "OK" : "FAIL"} tone={p.tokenSet ? "ok" : "fail"} />
-                  <Text color={theme.muted}> | business </Text>
+                  <Text color={theme.muted}> | WhatsApp business </Text>
                   <StatusBadge label={p.wabaConnected ? "OK" : "FAIL"} tone={p.wabaConnected ? "ok" : "fail"} />
-                  <Text color={theme.muted}> | phone </Text>
+                  <Text color={theme.muted}> | WhatsApp phone </Text>
                   <StatusBadge label={p.phoneNumberId ? "OK" : "FAIL"} tone={p.phoneNumberId ? "ok" : "fail"} />
                 </Box>
               ))
             ) : (
               <Text color={theme.muted}>No profiles found. Add one with: social accounts add &lt;name&gt;</Text>
             )}
-            <Text color={theme.muted}>Switch profile: social accounts switch &lt;name&gt;</Text>
+            <Text color={theme.muted}>Switch workspace: social accounts switch &lt;name&gt;</Text>
           </FramedBlock>
 
           <FramedBlock title="Activity">
@@ -2286,24 +3167,28 @@ function HatchRuntime(): JSX.Element {
         </>
       )}
 
-      <SectionHeading label="Transcript" />
-      <Box marginTop={1} flexDirection="column">
-        {chatTurns.slice(-16).map((turn) => (
-          turn.role === "user" ? (
-            <Box key={turn.id} marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.muted}>
-              <Text color={theme.text}>{turn.text || "..."}</Text>
-            </Box>
-          ) : (
-            <Box key={turn.id} marginTop={1}>
-              <Text color={turn.role === "assistant" ? theme.text : theme.muted}>
-                {turn.role === "system" ? `· ${turn.text || "..."}` : (turn.text || "...")}
-              </Text>
-            </Box>
-          )
-        ))}
-      </Box>
+      {!quietMode ? (
+        <>
+          <SectionHeading label="Transcript" />
+          <Box marginTop={1} flexDirection="column">
+            {chatTurns.slice(-16).map((turn) => (
+              turn.role === "user" ? (
+                <Box key={turn.id} marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.muted}>
+                  <Text color={theme.text}>{turn.text || "..."}</Text>
+                </Box>
+              ) : (
+                <Box key={turn.id} marginTop={1}>
+                  <Text color={turn.role === "assistant" ? theme.text : theme.muted}>
+                    {turn.role === "system" ? `· ${turn.text || "..."}` : (turn.text || "...")}
+                  </Text>
+                </Box>
+              )
+            ))}
+          </Box>
+        </>
+      ) : null}
 
-      {verboseMode ? (
+      {verboseMode && !quietMode ? (
         <>
           <SectionHeading label="Diagnostics" />
           <FramedBlock title="Execution rail" borderColor={state.currentRisk === "HIGH" ? riskTone : theme.muted}>
@@ -2403,6 +3288,29 @@ function HatchRuntime(): JSX.Element {
         </>
       ) : null}
 
+      {showGuidedMenu ? (
+        <>
+          <SectionHeading label="What do you want to do?" />
+          <FramedBlock title="Guided menu">
+            <Text color={theme.muted}>Pick one option and I will guide you.</Text>
+            <Box marginTop={1} />
+            {guidedMenuOptions.length ? (
+              <Select
+                options={guidedMenuOptions}
+                onChange={(value) => {
+                  setShowGuidedMenu(false);
+                  dispatch({ type: "SET_INPUT", value });
+                  void parseAndQueueIntent(value);
+                }}
+              />
+            ) : (
+              <Text color={theme.muted}>No options available yet. Press w to close.</Text>
+            )}
+            <Text color={theme.muted}>Tip: press w or Esc to close.</Text>
+          </FramedBlock>
+        </>
+      ) : null}
+
       {showHelp ? (
         <>
           <SectionHeading label="Help" />
@@ -2412,7 +3320,7 @@ function HatchRuntime(): JSX.Element {
           <Text color={theme.text}>Memory: say `my name is ...` and later ask `what's my name`.</Text>
           <Text color={theme.text}>Keys: Enter/y approve, n/r reject, e edit slots, d diagnostics.</Text>
           <Text color={theme.text}>Quick: g guided setup, n next step, l logs, {`1-${Math.min(9, quickActions.length)}`} run onboarding steps.</Text>
-          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
+          <Text color={theme.muted}>UI: / palette (type to filter, Esc to close), w menu, t tutorial, z fix now, b board filter, c attention mode, v quiet mode, i next-step guide, m safe mode, p panic, k diagnostic pack, [ ] cycle focus, f run focus, s switch workspace, a approvals, e alerts, h help fix, x collapse/expand diagnostics (verbose), up/down history, q quit.</Text>
           <Text color={theme.muted}>Tokens: type "fix token" or "open whatsapp token" to launch the dashboard.</Text>
           </FramedBlock>
         </>
@@ -2424,8 +3332,11 @@ function HatchRuntime(): JSX.Element {
         <TextInput value={inputValue} onChange={setInputValue} focus={!showPalette} />
       </Box>
       <Text color={state.currentRisk === "HIGH" ? riskTone : theme.accent}>{actionHint}</Text>
+      {hotkeyTips.length ? (
+        <Text color={theme.muted}>Hotkeys now: {hotkeyTips.join(" | ")}</Text>
+      ) : null}
       <Text color={theme.muted}>
-        Enter confirm | / palette (filter) | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
+        Enter confirm | / palette (filter) | w menu | t tutorial | z fix | b board | c attention | v quiet | i guide | m safe | p panic | k pack | [ ] focus | f run | s switch | a approvals | e alerts | h help | g guided | n next | l logs | {`1-${Math.min(9, quickActions.length)}`} quick | ? help | d diagnostics | x rail | q quit
       </Text>
     </Box>
   );

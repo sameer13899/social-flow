@@ -38,6 +38,18 @@ async function pickPhoneNumberId(phoneNumbers, defaultId) {
     ]);
     return String(answers.id);
 }
+function resolveSendMode(options, envMode, isTTY) {
+    const env = String(envMode || '').trim().toLowerCase();
+    if (options.prod)
+        return { mode: 'prod', needsPrompt: false };
+    if (options.sandbox)
+        return { mode: 'sandbox', needsPrompt: false };
+    if (env === 'prod' || env === 'production')
+        return { mode: 'prod', needsPrompt: false };
+    if (env === 'sandbox')
+        return { mode: 'sandbox', needsPrompt: false };
+    return { mode: '', needsPrompt: Boolean(isTTY) };
+}
 function registerWhatsAppCommands(program) {
     const whatsapp = program.command('whatsapp').alias('waba').alias('wa').description('WhatsApp Business (Cloud API)');
     whatsapp
@@ -52,6 +64,8 @@ function registerWhatsAppCommands(program) {
         .option('--json', 'Output as JSON')
         .option('--dry-run', 'Print payload without calling the API')
         .option('--verbose', 'Print payload without secrets')
+        .option('--sandbox', 'Preview only (no message is sent)')
+        .option('--prod', 'Send a live production message')
         .action(async (options) => {
         const token = getTokenOrExit();
         const type = String(options.type || 'text').toLowerCase();
@@ -85,11 +99,37 @@ function registerWhatsAppCommands(program) {
             console.error(chalk.red('X Invalid --type. Use: text, image'));
             process.exit(1);
         }
+        const modeResolution = resolveSendMode(options, process.env.SOCIAL_WABA_MODE || '', process.stdout.isTTY);
+        let mode = modeResolution.mode;
+        if (!mode) {
+            if (!modeResolution.needsPrompt) {
+                console.error(chalk.red('X Missing mode. Use --prod to send or --sandbox to preview only.'));
+                process.exit(1);
+            }
+            const answer = await inquirer.prompt([
+                {
+                    type: 'list',
+                    name: 'mode',
+                    message: 'Send in sandbox or production mode?',
+                    choices: [
+                        { name: 'Sandbox (preview only, no send)', value: 'sandbox' },
+                        { name: 'Production (send real message)', value: 'prod' }
+                    ],
+                    default: 0
+                }
+            ]);
+            mode = answer.mode === 'prod' ? 'prod' : 'sandbox';
+        }
+        if (mode === 'sandbox') {
+            options.dryRun = true;
+        }
         if (options.verbose || options.dryRun) {
             printRequestDebug({ endpoint: `/${from}/messages`, payload });
         }
-        if (options.dryRun)
+        if (options.dryRun) {
+            console.log(chalk.yellow('Sandbox preview only. No message sent.'));
             return;
+        }
         const spinner = ora('Sending WhatsApp message...').start();
         const client = new MetaAPIClient(token, 'whatsapp');
         try {
@@ -203,4 +243,7 @@ function registerWhatsAppCommands(program) {
         }
     });
 }
+registerWhatsAppCommands._private = {
+    resolveSendMode
+};
 module.exports = registerWhatsAppCommands;

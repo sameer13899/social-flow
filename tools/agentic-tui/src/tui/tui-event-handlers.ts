@@ -9,6 +9,23 @@ export interface ShortcutHandlers {
   onReject: () => void;
   onToggleRail: () => void;
   onPaletteToggle: () => void;
+  onToggleBoardFilter: () => void;
+  onToggleAttentionMode: () => void;
+  onFocusPrev: () => void;
+  onFocusNext: () => void;
+  onFocusRun: () => void;
+  onFocusActivate: () => void;
+  onFocusApprovals: () => void;
+  onFocusAlerts: () => void;
+  onToggleQuietMode: () => void;
+  onHelpFix: () => void;
+  onToggleGuideOverlay: () => void;
+  onToggleSafeMode: () => void;
+  onPanicSummary: () => void;
+  onDiagnosticPack: () => void;
+  onToggleGuidedMenu: () => void;
+  onAdvanceOnboarding: () => void;
+  onFixNow: () => void;
   onGuide: () => void;
   onNextAction: () => void;
   onLogs: () => void;
@@ -83,6 +100,74 @@ export function handleShortcut(
   }
   if (input === "x" && allowSingleKey) {
     handlers.onToggleRail();
+    return true;
+  }
+  if (input === "b" && allowSingleKey && phase === "INPUT") {
+    handlers.onToggleBoardFilter();
+    return true;
+  }
+  if (input === "c" && allowSingleKey && phase === "INPUT") {
+    handlers.onToggleAttentionMode();
+    return true;
+  }
+  if (input === "[" && allowSingleKey && phase === "INPUT") {
+    handlers.onFocusPrev();
+    return true;
+  }
+  if (input === "]" && allowSingleKey && phase === "INPUT") {
+    handlers.onFocusNext();
+    return true;
+  }
+  if (input === "f" && allowSingleKey && phase === "INPUT") {
+    handlers.onFocusRun();
+    return true;
+  }
+  if (input === "s" && allowSingleKey && phase === "INPUT") {
+    handlers.onFocusActivate();
+    return true;
+  }
+  if (input === "a" && allowSingleKey && phase === "INPUT") {
+    handlers.onFocusApprovals();
+    return true;
+  }
+  if (input === "e" && allowSingleKey && phase === "INPUT") {
+    handlers.onFocusAlerts();
+    return true;
+  }
+  if (input === "v" && allowSingleKey && phase === "INPUT") {
+    handlers.onToggleQuietMode();
+    return true;
+  }
+  if (input === "h" && allowSingleKey && phase === "INPUT") {
+    handlers.onHelpFix();
+    return true;
+  }
+  if (input === "i" && allowSingleKey && phase === "INPUT") {
+    handlers.onToggleGuideOverlay();
+    return true;
+  }
+  if (input === "m" && allowSingleKey && phase === "INPUT") {
+    handlers.onToggleSafeMode();
+    return true;
+  }
+  if (input === "p" && allowSingleKey && phase === "INPUT") {
+    handlers.onPanicSummary();
+    return true;
+  }
+  if (input === "k" && allowSingleKey && phase === "INPUT") {
+    handlers.onDiagnosticPack();
+    return true;
+  }
+  if (input === "w" && allowSingleKey && phase === "INPUT") {
+    handlers.onToggleGuidedMenu();
+    return true;
+  }
+  if (input === "t" && allowSingleKey && phase === "INPUT") {
+    handlers.onAdvanceOnboarding();
+    return true;
+  }
+  if (input === "z" && allowSingleKey && phase === "INPUT") {
+    handlers.onFixNow();
     return true;
   }
   if (input === "/" && allowSingleKey && phase === "INPUT") {

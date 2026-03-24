@@ -42,11 +42,14 @@ async function run() {
       'uninstall-command.test',
       'policy.test',
       'ops.test',
+      'ops-command.test',
       'hub.test',
       'industry.test',
       'ui-chrome.test',
+      'accounts-command.test',
       'onboard-command.test',
       'integrations-command.test',
+      'whatsapp-command.test',
       'readiness.test',
       'guidance.test'
     ];

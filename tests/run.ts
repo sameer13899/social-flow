@@ -12,7 +12,8 @@ async function loadTests(): Promise<TestCase[]> {
   const stems = [
     "intent-parser.test",
     "config.test",
-    "playwright-runtime.test"
+    "playwright-runtime.test",
+    "http-executor.test"
   ];
   const out: TestCase[] = [];
 

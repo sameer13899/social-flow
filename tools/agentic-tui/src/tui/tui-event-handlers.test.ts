@@ -12,6 +12,23 @@ function handlerFlags() {
     approve: false,
     reject: false,
     rail: false,
+    boardFilter: false,
+    attentionMode: false,
+    focusPrev: false,
+    focusNext: false,
+    focusRun: false,
+    focusActivate: false,
+    focusApprovals: false,
+    focusAlerts: false,
+    quietMode: false,
+    helpFix: false,
+    guideOverlay: false,
+    safeMode: false,
+    panic: false,
+    diagnostic: false,
+    guidedMenu: false,
+    onboarding: false,
+    fixNow: false,
     palette: false,
     guide: false,
     nextAction: false,
@@ -34,6 +51,23 @@ function handlers(flags: ReturnType<typeof handlerFlags>) {
     onApprove: () => { flags.approve = true; },
     onReject: () => { flags.reject = true; },
     onToggleRail: () => { flags.rail = true; },
+    onToggleBoardFilter: () => { flags.boardFilter = true; },
+    onToggleAttentionMode: () => { flags.attentionMode = true; },
+    onFocusPrev: () => { flags.focusPrev = true; },
+    onFocusNext: () => { flags.focusNext = true; },
+    onFocusRun: () => { flags.focusRun = true; },
+    onFocusActivate: () => { flags.focusActivate = true; },
+    onFocusApprovals: () => { flags.focusApprovals = true; },
+    onFocusAlerts: () => { flags.focusAlerts = true; },
+    onToggleQuietMode: () => { flags.quietMode = true; },
+    onHelpFix: () => { flags.helpFix = true; },
+    onToggleGuideOverlay: () => { flags.guideOverlay = true; },
+    onToggleSafeMode: () => { flags.safeMode = true; },
+    onPanicSummary: () => { flags.panic = true; },
+    onDiagnosticPack: () => { flags.diagnostic = true; },
+    onToggleGuidedMenu: () => { flags.guidedMenu = true; },
+    onAdvanceOnboarding: () => { flags.onboarding = true; },
+    onFixNow: () => { flags.fixNow = true; },
     onPaletteToggle: () => { flags.palette = true; },
     onGuide: () => { flags.guide = true; },
     onNextAction: () => { flags.nextAction = true; },
@@ -106,6 +140,204 @@ export const shortcutHandlerTests: TuiTestCase[] = [
       });
       assert.equal(consumed, false);
       assert.equal(flags.quit, false);
+    }
+  },
+  {
+    name: "b toggles agency board filter in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("b", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.boardFilter, true);
+    }
+  },
+  {
+    name: "c toggles attention mode in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("c", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.attentionMode, true);
+    }
+  },
+  {
+    name: "[ and ] cycle focused workspace in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const prev = handleShortcut("[", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      const next = handleShortcut("]", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(prev, true);
+      assert.equal(next, true);
+      assert.equal(flags.focusPrev, true);
+      assert.equal(flags.focusNext, true);
+    }
+  },
+  {
+    name: "f runs focused workspace action in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("f", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.focusRun, true);
+    }
+  },
+  {
+    name: "s activates focused workspace in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("s", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.focusActivate, true);
+    }
+  },
+  {
+    name: "a opens focused approvals in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("a", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.focusApprovals, true);
+    }
+  },
+  {
+    name: "e opens focused alerts in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("e", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.focusAlerts, true);
+    }
+  },
+  {
+    name: "v toggles quiet mode in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("v", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.quietMode, true);
+    }
+  },
+  {
+    name: "h runs help fix flow in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("h", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.helpFix, true);
+    }
+  },
+  {
+    name: "i toggles next step guide overlay in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("i", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.guideOverlay, true);
+    }
+  },
+  {
+    name: "m toggles safe mode in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("m", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.safeMode, true);
+    }
+  },
+  {
+    name: "p triggers panic summary in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("p", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.panic, true);
+    }
+  },
+  {
+    name: "k triggers diagnostic pack in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("k", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.diagnostic, true);
+    }
+  },
+  {
+    name: "w opens guided menu in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("w", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.guidedMenu, true);
+    }
+  },
+  {
+    name: "t advances onboarding in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("t", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.onboarding, true);
+    }
+  },
+  {
+    name: "z runs fix now in input phase",
+    fn: () => {
+      const flags = handlerFlags();
+      const consumed = handleShortcut("z", {}, false, handlers(flags), {
+        phase: "INPUT",
+        hasDraftText: false
+      });
+      assert.equal(consumed, true);
+      assert.equal(flags.fixNow, true);
     }
   },
   {

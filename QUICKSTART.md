@@ -21,7 +21,11 @@ social status
 
 ```bash
 social hatch
+social accounts summary
+social accounts check --only needs-setup
+social status --profiles
 social profile get --fields id,name
+social ops center
 social post create --message "Hello team" --page-id PAGE_ID
 social ads list --account act_123
 social ai --provider deterministic "list ads account act_123"
@@ -36,6 +40,10 @@ social hatch
 Onboarding notes:
 - Facebook/Instagram: opens Graph Explorer to generate a token.
 - WhatsApp: opens Meta App Dashboard (WhatsApp API Setup) for token generation.
+
+## WhatsApp Send Safety
+
+`social whatsapp send` requires `--sandbox` or `--prod` (or set `SOCIAL_WABA_MODE=prod`). Sandbox mode prints the payload and never sends.
 
 ## Local AI
 

@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { buildReadinessReport } = require('../lib/readiness');
+const { buildReadinessReport, buildProfilesReadinessReport } = require('../lib/readiness');
 const gatewayManager = require('../lib/gateway/manager');
 const { tailLines } = gatewayManager;
 
@@ -16,6 +16,30 @@ function mockConfig(input = {}) {
       model: input.agentModel || '',
       apiKey: input.agentApiKey || ''
     })
+  };
+}
+
+function mockProfilesConfig(input = {}) {
+  const profiles = input.profiles || {};
+  const activeProfile = input.activeProfile || Object.keys(profiles)[0] || 'default';
+  let override = '';
+  function currentProfile() {
+    return override || activeProfile;
+  }
+  function currentData() {
+    return profiles[currentProfile()] || { tokens: {}, onboardingCompleted: false, appCredentialsConfigured: false };
+  }
+  return {
+    listProfiles: () => Object.keys(profiles),
+    getActiveProfile: () => currentProfile(),
+    hasProfile: (name) => Boolean(profiles[name]),
+    useProfile: (name) => { override = name; },
+    clearProfileOverride: () => { override = ''; },
+    getDefaultApi: () => 'facebook',
+    hasToken: (api) => Boolean((currentData().tokens || {})[api]),
+    hasCompletedOnboarding: () => Boolean(currentData().onboardingCompleted),
+    hasAppCredentials: () => Boolean(currentData().appCredentialsConfigured),
+    getAgentConfig: () => ({ provider: 'openai', model: '', apiKey: 'key' })
   };
 }
 
@@ -191,6 +215,26 @@ module.exports = [
       );
       assert.equal(decision.replace, false);
       assert.equal(decision.reason, 'not_social_gateway');
+    }
+  },
+  {
+    name: 'profiles readiness report summarizes readiness per profile',
+    fn: () => {
+      const report = buildProfilesReadinessReport({
+        config: mockProfilesConfig({
+          activeProfile: 'alpha',
+          profiles: {
+            alpha: { tokens: { facebook: true }, onboardingCompleted: true, appCredentialsConfigured: true },
+            beta: { tokens: {}, onboardingCompleted: false, appCredentialsConfigured: false }
+          }
+        })
+      });
+      assert.equal(report.summary.total, 2);
+      assert.equal(report.summary.ready, 1);
+      assert.equal(report.summary.tokensMissing, 1);
+      assert.equal(report.profiles[0].profile, 'alpha');
+      assert.equal(report.profiles[0].active, true);
+      assert.equal(report.profiles[1].readiness.ok, false);
     }
   }
 ];

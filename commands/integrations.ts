@@ -11,6 +11,7 @@ const REQUIRED_WABA_SCOPES = [
 ];
 
 const WABA_SETUP_URL = 'https://developers.facebook.com/docs/whatsapp/embedded-signup/';
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function asArray(v) {
   return Array.isArray(v) ? v : [];
@@ -75,6 +76,20 @@ async function resolvePhoneId(client, wabaId) {
   }
 }
 
+function tokenExpiryCheck(expiresAtSeconds, nowMs = Date.now()) {
+  const expiresAt = Number(expiresAtSeconds || 0) * 1000;
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return null;
+  const msLeft = expiresAt - nowMs;
+  const daysLeft = Math.round(msLeft / DAY_MS);
+  if (msLeft <= 0) {
+    return { key: 'token_expiry', ok: false, detail: 'Token expired.' };
+  }
+  if (daysLeft <= 30) {
+    return { key: 'token_expiry', ok: null, detail: `Token expires in ${daysLeft} day(s).` };
+  }
+  return { key: 'token_expiry', ok: true, detail: `Token expires in ${daysLeft} day(s).` };
+}
+
 async function runWabaDoctor({ token, businessId, wabaId, phoneNumberId, callbackUrl, verifyToken, testTo }) {
   const checks = [];
   const client = new MetaAPIClient(token, 'whatsapp');
@@ -101,6 +116,8 @@ async function runWabaDoctor({ token, businessId, wabaId, phoneNumberId, callbac
         ok: missing.length === 0,
         detail: missing.length ? `Missing: ${missing.join(', ')}` : 'ok'
       });
+      const expiryCheck = tokenExpiryCheck(debug?.data?.expires_at);
+      if (expiryCheck) checks.push(expiryCheck);
     } catch (error) {
       checks.push({ key: 'required_scopes', ok: false, detail: String(error?.message || error || '') });
     }
@@ -168,6 +185,7 @@ function formatCheckLabel(key) {
   const labels = {
     token_valid: 'Token',
     required_scopes: 'Required scopes',
+    token_expiry: 'Token expiry',
     business_id: 'Business ID',
     waba_id: 'WhatsApp Business account (WABA) ID',
     phone_access: 'Phone number access',
@@ -197,6 +215,7 @@ function normalizeMetaError(detail) {
 
 function fixForCheck(key) {
   if (key === 'token_valid') return 'Run: social auth login -a whatsapp';
+  if (key === 'token_expiry') return 'Re-auth token: social auth login -a whatsapp';
   if (key === 'required_scopes') {
     return 'Regenerate token with scopes: whatsapp_business_messaging, whatsapp_business_management (Meta App Dashboard -> WhatsApp -> API Setup).';
   }
@@ -397,5 +416,6 @@ module.exports = registerIntegrationsCommand;
 (registerIntegrationsCommand)._private = {
   formatCheckLabel,
   normalizeMetaError,
-  fixForCheck
+  fixForCheck,
+  tokenExpiryCheck
 };

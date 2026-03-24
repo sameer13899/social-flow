@@ -39,10 +39,15 @@ social ai --provider ollama "get my facebook profile"
 social onboard
 social doctor
 social status
+social status --profiles
 social config
+social accounts summary
+social accounts check --only needs-setup
+social accounts switch <name>
 social profile get --fields id,name
 social post create --message "Hello team" --page-id PAGE_ID
 social ads list --account act_123
+social ops center
 social logs
 social replay <LOG_ID>
 social ai --provider deterministic "create post \"Hello\" page 12345"
@@ -60,6 +65,15 @@ social hatch
 Onboarding notes:
 - Facebook/Instagram: opens Graph Explorer to generate a token.
 - WhatsApp: opens Meta App Dashboard (WhatsApp API Setup) for token generation.
+
+## WhatsApp Send Safety
+
+`social whatsapp send` requires `--sandbox` or `--prod` (or set `SOCIAL_WABA_MODE=prod`). Sandbox mode prints the payload and never sends.
+
+Retry tuning for transient Meta failures:
+- `SOCIAL_META_RETRY_MAX` (default 3)
+- `SOCIAL_META_RETRY_BASE_MS` (default 1000)
+- `SOCIAL_META_RETRY_MAX_MS` (default 8000)
 
 ## Config Compatibility
 

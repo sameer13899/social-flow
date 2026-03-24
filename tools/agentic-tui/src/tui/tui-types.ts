@@ -73,6 +73,20 @@ export interface PersistedLog {
   error?: string;
 }
 
+export interface OpsWorkspaceSnapshot {
+  name: string;
+  approvalsOpen: number;
+  alertsOpen: number;
+  lastMorningRunDate: string;
+  lastActivity: string;
+  nextAction: string;
+}
+
+export interface OpsCenterSnapshot {
+  activeWorkspace: string;
+  workspaces: OpsWorkspaceSnapshot[];
+}
+
 export interface LoadState<T> {
   loading: boolean;
   error: string | null;

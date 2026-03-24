@@ -16,6 +16,8 @@ type SendOptions = {
   json?: boolean;
   dryRun?: boolean;
   verbose?: boolean;
+  sandbox?: boolean;
+  prod?: boolean;
 };
 
 type TemplateListOptions = {
@@ -64,6 +66,11 @@ type WhatsAppPayload = {
   };
 };
 
+type SendModeResolution = {
+  mode: 'prod' | 'sandbox' | '';
+  needsPrompt: boolean;
+};
+
 function getTokenOrExit(): string {
   const token = config.getToken('whatsapp');
   if (!token) {
@@ -100,6 +107,15 @@ async function pickPhoneNumberId(phoneNumbers: PhoneNumberEntry[], defaultId?: s
   return String(answers.id);
 }
 
+function resolveSendMode(options: SendOptions, envMode: string, isTTY: boolean): SendModeResolution {
+  const env = String(envMode || '').trim().toLowerCase();
+  if (options.prod) return { mode: 'prod', needsPrompt: false };
+  if (options.sandbox) return { mode: 'sandbox', needsPrompt: false };
+  if (env === 'prod' || env === 'production') return { mode: 'prod', needsPrompt: false };
+  if (env === 'sandbox') return { mode: 'sandbox', needsPrompt: false };
+  return { mode: '', needsPrompt: Boolean(isTTY) };
+}
+
 function registerWhatsAppCommands(program: any) {
   const whatsapp = program.command('whatsapp').alias('waba').alias('wa').description('WhatsApp Business (Cloud API)');
 
@@ -115,6 +131,8 @@ function registerWhatsAppCommands(program: any) {
     .option('--json', 'Output as JSON')
     .option('--dry-run', 'Print payload without calling the API')
     .option('--verbose', 'Print payload without secrets')
+    .option('--sandbox', 'Preview only (no message is sent)')
+    .option('--prod', 'Send a live production message')
     .action(async (options: SendOptions) => {
       const token = getTokenOrExit();
       const type = String(options.type || 'text').toLowerCase();
@@ -149,10 +167,39 @@ function registerWhatsAppCommands(program: any) {
         process.exit(1);
       }
 
+      const modeResolution = resolveSendMode(options, process.env.SOCIAL_WABA_MODE || '', process.stdout.isTTY);
+      let mode = modeResolution.mode;
+      if (!mode) {
+        if (!modeResolution.needsPrompt) {
+          console.error(chalk.red('X Missing mode. Use --prod to send or --sandbox to preview only.'));
+          process.exit(1);
+        }
+        const answer = await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'mode',
+            message: 'Send in sandbox or production mode?',
+            choices: [
+              { name: 'Sandbox (preview only, no send)', value: 'sandbox' },
+              { name: 'Production (send real message)', value: 'prod' }
+            ],
+            default: 0
+          }
+        ]);
+        mode = answer.mode === 'prod' ? 'prod' : 'sandbox';
+      }
+
+      if (mode === 'sandbox') {
+        options.dryRun = true;
+      }
+
       if (options.verbose || options.dryRun) {
         printRequestDebug({ endpoint: `/${from}/messages`, payload });
       }
-      if (options.dryRun) return;
+      if (options.dryRun) {
+        console.log(chalk.yellow('Sandbox preview only. No message sent.'));
+        return;
+      }
 
       const spinner = ora('Sending WhatsApp message...').start();
       const client = new MetaAPIClient(token, 'whatsapp');
@@ -272,3 +319,7 @@ function registerWhatsAppCommands(program: any) {
 }
 
 export = registerWhatsAppCommands;
+
+(registerWhatsAppCommands as any)._private = {
+  resolveSendMode
+};

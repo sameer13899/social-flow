@@ -1,6 +1,109 @@
 const chalk = require('chalk');
 const inquirer = require('inquirer');
 const config = require('../lib/config');
+const storage = require('../lib/ops/storage');
+const { buildReadinessReport } = require('../lib/readiness');
+const { renderPanel, formatBadge } = require('../lib/ui/chrome');
+
+const SUCCESS_STATUSES = new Set(['done', 'success', 'ok']);
+const FAILURE_STATUSES = new Set(['error', 'failed']);
+
+function summarizeActionLog(rows) {
+  const entries = Array.isArray(rows) ? rows : [];
+  let success = 0;
+  let failed = 0;
+  let lastError = '';
+  let lastActivity = '';
+
+  entries.forEach((entry) => {
+    const status = String(entry?.status || '').toLowerCase();
+    if (SUCCESS_STATUSES.has(status)) success += 1;
+    if (FAILURE_STATUSES.has(status)) failed += 1;
+  });
+
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const when = String(entries[i]?.when || entries[i]?.createdAt || '').trim();
+    if (when) {
+      lastActivity = when;
+      break;
+    }
+  }
+
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const status = String(entries[i]?.status || '').toLowerCase();
+    if (FAILURE_STATUSES.has(status)) {
+      lastError = String(entries[i]?.summary || entries[i]?.why || entries[i]?.action || '');
+      break;
+    }
+  }
+
+  return { success, failed, lastError, lastActivity };
+}
+
+function truncateText(value, max = 36) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
+function formatActivity(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toISOString().replace('T', ' ').slice(0, 16);
+}
+
+function csvIds(value) {
+  return String(value || '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function normalizeCheckFilter(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || raw === 'all') return 'all';
+  if (['ready', 'ok'].includes(raw)) return 'ready';
+  if (['needs-setup', 'setup', 'incomplete'].includes(raw)) return 'needs-setup';
+  if (['missing-access', 'no-access', 'access-missing', 'access'].includes(raw)) return 'missing-access';
+  if (['attention', 'blocked', 'blockers', 'needs-attention'].includes(raw)) return 'needs-attention';
+  return 'all';
+}
+
+function nextStepForReadiness(readiness) {
+  if (!readiness.anyTokenConfigured) return 'Run setup (connect access)';
+  if (!readiness.onboardingCompleted) return 'Run setup (finish steps)';
+  if (!readiness.appCredentialsConfigured) return 'Add app login';
+  if (!readiness.ok) return 'Check setup';
+  return 'All clear';
+}
+
+function passesCheckFilter(readiness, filter) {
+  if (filter === 'ready') {
+    return readiness.ok && readiness.anyTokenConfigured && readiness.onboardingCompleted;
+  }
+  if (filter === 'needs-setup') {
+    return !readiness.onboardingCompleted || !readiness.anyTokenConfigured || !readiness.ok;
+  }
+  if (filter === 'missing-access') {
+    return !readiness.anyTokenConfigured;
+  }
+  if (filter === 'needs-attention') {
+    return readiness.blockers.length > 0;
+  }
+  return true;
+}
+
+function withProfile(profile, fn) {
+  config.useProfile(profile);
+  try {
+    return fn();
+  } finally {
+    config.clearProfileOverride();
+  }
+}
 
 function registerAccountsCommands(program) {
   const accounts = program.command('accounts').description('Manage multiple accounts/profiles');
@@ -21,6 +124,146 @@ function registerAccountsCommands(program) {
         const mark = p === active ? chalk.green('*') : ' ';
         console.log(`${mark} ${chalk.cyan(p)}`);
       });
+      console.log('');
+    });
+
+  accounts
+    .command('summary')
+    .description('Agency summary across profiles (readiness + recent ops)')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      const profiles = config.listProfiles();
+      const active = config.getActiveProfile();
+      if (!profiles.length) {
+        console.log(chalk.yellow('! No profiles found. Add one with: social accounts add <name>'));
+        console.log('');
+        return;
+      }
+
+      const snapshots = profiles.map((profile) => {
+        const readiness = withProfile(profile, () => buildReadinessReport());
+        const metrics = summarizeActionLog(storage.listActionLog(profile));
+        return {
+          profile,
+          active: profile === active,
+          readiness,
+          metrics
+        };
+      });
+
+      if (options.json) {
+        console.log(JSON.stringify({ active, profiles: snapshots }, null, 2));
+        return;
+      }
+
+      const readyCount = snapshots.filter((s) => s.readiness.ok).length;
+      const tokenMissing = snapshots.filter((s) => !s.readiness.anyTokenConfigured).length;
+      const errorCount = snapshots.filter((s) => s.metrics.failed > 0).length;
+
+      const summaryRows = [
+        `${chalk.gray('Active workspace'.padEnd(18, ' '))} ${chalk.cyan(active)}`,
+        `${chalk.gray('Workspaces'.padEnd(18, ' '))} ${chalk.cyan(String(snapshots.length))}`,
+        `${chalk.gray('Ready to run'.padEnd(18, ' '))} ${chalk.cyan(String(readyCount))}`,
+        `${chalk.gray('Needs setup'.padEnd(18, ' '))} ${chalk.cyan(String(snapshots.length - readyCount))}`,
+        `${chalk.gray('Access missing'.padEnd(18, ' '))} ${chalk.cyan(String(tokenMissing))}`,
+        `${chalk.gray('Workspaces w/errors'.padEnd(18, ' '))} ${chalk.cyan(String(errorCount))}`
+      ];
+
+      const rows = snapshots.map((s) => {
+        const readyBadge = s.readiness.ok ? formatBadge('READY', { tone: 'success' }) : formatBadge('SETUP', { tone: 'warn' });
+        const tokenBadge = s.readiness.anyTokenConfigured
+          ? formatBadge('ACCESS', { tone: 'success' })
+          : formatBadge('ACCESS?', { tone: 'warn' });
+        const onboardingBadge = s.readiness.onboardingCompleted
+          ? formatBadge('SETUP', { tone: 'success' })
+          : formatBadge('SETUP?', { tone: 'warn' });
+        const appBadge = s.readiness.appCredentialsConfigured
+          ? formatBadge('APP', { tone: 'success' })
+          : formatBadge('APP?', { tone: 'warn' });
+        const metrics = chalk.gray(`${s.metrics.success} ok / ${s.metrics.failed} fail`);
+        const lastActivity = s.metrics.lastActivity
+          ? chalk.gray(`last ${formatActivity(s.metrics.lastActivity)}`)
+          : chalk.gray('no activity');
+        const lastError = s.metrics.lastError
+          ? chalk.red(truncateText(s.metrics.lastError, 36))
+          : chalk.gray('no errors');
+        const prefix = s.active ? chalk.green('*') : ' ';
+        return `${prefix} ${chalk.cyan(s.profile)}  ${readyBadge} ${tokenBadge} ${onboardingBadge} ${appBadge}  ${metrics}  ${lastActivity}  ${lastError}`;
+      });
+
+      console.log('');
+      console.log(renderPanel({
+        title: ' Agency Summary ',
+        rows: summaryRows,
+        minWidth: 86,
+        borderColor: (value) => chalk.cyan(value)
+      }));
+      console.log('');
+      console.log(renderPanel({
+        title: ' Profile Readiness ',
+        rows,
+        minWidth: 110,
+        borderColor: (value) => chalk.blue(value)
+      }));
+      console.log('');
+    });
+
+  accounts
+    .command('check')
+    .description('Quick check across all workspaces')
+    .option('--only <filter>', 'Filter: all|ready|needs-setup|missing-access|needs-attention', 'all')
+    .option('--workspaces <names>', 'Comma-separated workspace names (default: all)')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      const filter = normalizeCheckFilter(options.only);
+      const active = config.getActiveProfile();
+      const list = csvIds(options.workspaces);
+      const profiles = list.length ? list : config.listProfiles();
+
+      if (!profiles.length) {
+        console.log(chalk.yellow('! No workspaces found. Add one with: social accounts add <name>'));
+        console.log('');
+        return;
+      }
+
+      const snapshots = profiles.map((profile) => {
+        const readiness = withProfile(profile, () => buildReadinessReport());
+        return {
+          profile,
+          active: profile === active,
+          readiness,
+          nextStep: nextStepForReadiness(readiness)
+        };
+      }).filter((entry) => passesCheckFilter(entry.readiness, filter));
+
+      if (options.json) {
+        console.log(JSON.stringify({ active, filter, workspaces: snapshots }, null, 2));
+        return;
+      }
+
+      const rows = snapshots.map((s) => {
+        const readyBadge = s.readiness.ok ? formatBadge('READY', { tone: 'success' }) : formatBadge('SETUP', { tone: 'warn' });
+        const tokenBadge = s.readiness.anyTokenConfigured
+          ? formatBadge('ACCESS', { tone: 'success' })
+          : formatBadge('ACCESS?', { tone: 'warn' });
+        const onboardingBadge = s.readiness.onboardingCompleted
+          ? formatBadge('SETUP', { tone: 'success' })
+          : formatBadge('SETUP?', { tone: 'warn' });
+        const appBadge = s.readiness.appCredentialsConfigured
+          ? formatBadge('APP', { tone: 'success' })
+          : formatBadge('APP?', { tone: 'warn' });
+        const nextText = chalk.yellow(`next: ${s.nextStep}`);
+        const prefix = s.active ? chalk.green('*') : ' ';
+        return `${prefix} ${chalk.cyan(s.profile)}  ${readyBadge} ${tokenBadge} ${onboardingBadge} ${appBadge}  ${nextText}`;
+      });
+
+      console.log('');
+      console.log(renderPanel({
+        title: ' Workspace Check ',
+        rows,
+        minWidth: 96,
+        borderColor: (value) => chalk.blue(value)
+      }));
       console.log('');
     });
 
@@ -84,3 +327,11 @@ function registerAccountsCommands(program) {
 
 module.exports = registerAccountsCommands;
 
+(registerAccountsCommands)._private = {
+  summarizeActionLog,
+  truncateText,
+  formatActivity,
+  normalizeCheckFilter,
+  nextStepForReadiness,
+  passesCheckFilter
+};
