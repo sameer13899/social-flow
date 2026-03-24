@@ -1,14 +1,15 @@
-import chalk = require("chalk");
+#!/usr/bin/env node
 
-const { createGatewayServer } = require("../lib/gateway/server");
+const chalk = require('chalk');
+const { createGatewayServer } = require('../dist-legacy/lib/gateway/server.js');
 
-function toNumber(value: string | undefined, fallback: number): number {
+function toNumber(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-async function main(): Promise<void> {
-  const host = process.env.HOST || "0.0.0.0";
+async function main() {
+  const host = process.env.HOST || '0.0.0.0';
   const port = toNumber(process.env.PORT, 1310);
 
   const server = createGatewayServer({
@@ -16,15 +17,15 @@ async function main(): Promise<void> {
     port,
     apiKey: process.env.SOCIAL_GATEWAY_API_KEY,
     requireApiKey: true,
-    corsOrigins: process.env.SOCIAL_GATEWAY_CORS_ORIGINS || "",
+    corsOrigins: process.env.SOCIAL_GATEWAY_CORS_ORIGINS || '',
     rateLimitMax: toNumber(process.env.SOCIAL_GATEWAY_RATE_LIMIT_MAX, 180),
-    rateLimitWindowMs: toNumber(process.env.SOCIAL_GATEWAY_RATE_WINDOW_MS, 60_000)
+    rateLimitWindowMs: toNumber(process.env.SOCIAL_GATEWAY_RATE_WINDOW_MS, 60000)
   });
 
   await server.start();
 
   const url = server.url();
-  console.log(chalk.green("Social Flow hosted gateway is running."));
+  console.log(chalk.green('Social Flow hosted gateway is running.'));
   console.log(chalk.cyan(`Gateway: ${url}`));
   console.log(chalk.gray(`Health: ${url}/api/health`));
   console.log(chalk.gray(`Status: ${url}/api/status`));
@@ -34,8 +35,8 @@ async function main(): Promise<void> {
     process.exit(0);
   };
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 main().catch((error) => {

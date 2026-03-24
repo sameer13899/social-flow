@@ -13,4 +13,4 @@ ENV PORT=1310
 
 EXPOSE 1310
 
-CMD ["sh", "-c", "node dist-social/cli/gateway-hosted.js"]
+CMD ["sh", "-c", "node bin/gateway-hosted.js"]

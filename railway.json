@@ -4,6 +4,6 @@
     "buildCommand": "npm run build"
   },
   "deploy": {
-    "startCommand": "node dist-social/cli/gateway-hosted.js"
+    "startCommand": "node bin/gateway-hosted.js"
   }
 }
