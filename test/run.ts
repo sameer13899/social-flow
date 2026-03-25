@@ -51,7 +51,8 @@ async function run() {
       'integrations-command.test',
       'whatsapp-command.test',
       'readiness.test',
-      'guidance.test'
+      'guidance.test',
+      'reach.test'
     ];
 
     const tests: TestCase[] = [];
@@ -104,3 +105,4 @@ run().catch((e) => {
   console.error(e && (e as Error).stack ? (e as Error).stack : String(e));
   process.exit(1);
 });
+
