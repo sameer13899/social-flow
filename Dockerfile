@@ -13,4 +13,4 @@ ENV PORT=1310
 
 EXPOSE 1310
 
-CMD ["sh", "-c", "node bin/social.js --no-banner gateway --host 0.0.0.0 --port ${PORT:-1310} --require-api-key"]
+CMD ["sh", "-c", "node bin/gateway-hosted.js"]
