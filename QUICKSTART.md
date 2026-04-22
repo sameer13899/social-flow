@@ -2,6 +2,20 @@
 
 Social Flow ships the deterministic CLI by default. Use it to manage config, run profile/post/ads actions, and replay logged operations from one consistent entrypoint.
 
+For the beginner-first path, use the unified first-run flow first:
+
+```bash
+social start-here
+```
+
+Then open the canonical Studio app:
+
+```bash
+social studio
+```
+
+The Studio frontend defaults to `Start Here` in Beginner Mode and hides the advanced surfaces until you switch modes.
+
 ## 60-Second Start
 
 ```bash
@@ -31,7 +45,7 @@ social ads list --account act_123
 social ai --provider deterministic "list ads account act_123"
 ```
 
-## Hatch UI
+## Studio
 
 ```bash
 social hatch
@@ -40,6 +54,7 @@ social hatch
 Onboarding notes:
 - Facebook/Instagram: opens Graph Explorer to generate a token.
 - WhatsApp: opens Meta App Dashboard (WhatsApp API Setup) for token generation.
+- `social studio` opens the canonical `/studio/app/` route. `--frontend-path` is for custom local frontends only.
 
 ## WhatsApp Send Safety
 

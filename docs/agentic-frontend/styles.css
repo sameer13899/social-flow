@@ -37,6 +37,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -1150,6 +1154,12 @@ button.secondary {
   box-shadow: none;
 }
 
+#ui-mode-toggle.is-active {
+  border-color: rgba(112, 224, 181, 0.42);
+  background: rgba(112, 224, 181, 0.12);
+  color: var(--ink);
+}
+
 button:hover {
   transform: translateY(-1px);
   filter: brightness(1.05);
@@ -1765,15 +1775,15 @@ code {
   color: #fff5d9;
 }
 
-.operator-loop .hero-console-body {
+.campaign-loop .hero-console-body {
   gap: 12px;
 }
 
-.operator-loop .hero-task strong {
+.campaign-loop .hero-task strong {
   font-size: 16px;
 }
 
-.operator-loop .hero-task span {
+.campaign-loop .hero-task span {
   font-size: 12px;
 }
 

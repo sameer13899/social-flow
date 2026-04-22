@@ -1,8 +1,25 @@
 const STORAGE_KEY = "social_flow_agentic_frontend_v1";
+const UI_MODE_STORAGE_KEY = "social_flow_agentic_ui_mode_v1";
 const REFRESH_INTERVAL_MS = 30000;
 const WS_RECONNECT_MIN_MS = 1000;
 const WS_RECONNECT_MAX_MS = 15000;
 const WS_RECONNECT_JITTER_MS = 300;
+const ADVANCED_SCREEN_TARGETS = new Set([
+  "approvals",
+  "logs",
+  "copilot",
+  "diagnose",
+  "launchpad",
+  "agents",
+  "tools",
+  "recipes",
+  "triggers",
+  "webchat",
+  "keys",
+  "admin"
+]);
+const BASIC_SCREEN_TARGETS = new Set(["command", "setup", "baileys"]);
+const ADVANCED_MODULE_TARGETS = new Set(["run", "build"]);
 
 function defaultGatewayBaseUrl() {
   const injectedUrl = String(window.__SOCIAL_FLOW_GATEWAY__?.url || "").trim();
@@ -29,12 +46,13 @@ const DEFAULT_CONFIG = {
   apiKey: "",
   userApiKey: "",
   workspace: "default",
-  operatorId: "",
-  operatorName: ""
+  businessId: "",
+  businessName: ""
 };
 
 const state = {
   config: loadConfig(),
+  uiMode: loadUiMode(),
   chatSessionId: "",
   pendingActions: [],
   ws: null,
@@ -70,10 +88,11 @@ const nodes = {
   cfgApiKey: $("cfg-api-key"),
   cfgUserApiKey: $("cfg-user-api-key"),
   cfgWorkspace: $("cfg-workspace"),
-  cfgOperatorId: $("cfg-operator-id"),
-  cfgOperatorName: $("cfg-operator-name"),
+  cfgBusinessId: $("cfg-business-id"),
+  cfgBusinessName: $("cfg-business-name"),
   cfgSave: $("cfg-save"),
   cfgPing: $("cfg-ping"),
+  uiModeToggle: $("ui-mode-toggle"),
   refreshAllBtn: $("refresh-all"),
 
   metricHealth: $("metric-health"),
@@ -112,9 +131,9 @@ const nodes = {
   diagCopy: $("diag-copy"),
   diagnoseOutput: $("diagnose-output"),
 
-  operatorId: $("operator-id"),
-  operatorName: $("operator-name"),
-  saveOperator: $("save-operator"),
+  businessId: $("business-id"),
+  businessName: $("business-name"),
+  saveIdentity: $("save-identity"),
   morningSpend: $("morning-spend"),
   runMorning: $("run-morning"),
   markOnboarding: $("mark-onboarding"),
@@ -253,12 +272,29 @@ const nodes = {
   logsOutput: $("logs-output")
 };
 
+function loadUiMode() {
+  try {
+    const raw = localStorage.getItem(UI_MODE_STORAGE_KEY);
+    return String(raw || "beginner").trim().toLowerCase() === "advanced" ? "advanced" : "beginner";
+  } catch {
+    return "beginner";
+  }
+}
+
+function saveUiMode() {
+  try {
+    localStorage.setItem(UI_MODE_STORAGE_KEY, state.uiMode);
+  } catch {
+    // Ignore strict browser mode.
+  }
+}
+
 const SCREEN_META = {
   command: {
     group: "overview",
     kicker: "Overview",
-    title: "Command Deck",
-    summary: "Use the home screen to confirm readiness, triage approvals, and choose the next lane."
+    title: "Start Here",
+    summary: "Connect your accounts, confirm readiness, and see the next safe step."
   },
   approvals: {
     group: "overview",
@@ -275,20 +311,20 @@ const SCREEN_META = {
   copilot: {
     group: "run",
     kicker: "Run Flows",
-    title: "Agent Copilot",
+    title: "Copilot",
     summary: "Conversational control with live execution events and approval-safe plan execution."
   },
   diagnose: {
     group: "run",
     kicker: "Run Flows",
     title: "Ads Diagnosis",
-    summary: "Run guided diagnosis commands from a user-friendly form and capture immediate operator actions."
+    summary: "Run guided diagnosis commands from a simple form and capture immediate next actions."
   },
   launchpad: {
     group: "run",
     kicker: "Run Flows",
-    title: "Launchpad",
-    summary: "One-click operational flows for onboarding, guardrails, recurring routines, and runbooks."
+    title: "Setup",
+    summary: "One-click flows for onboarding, guardrails, recurring routines, and runbooks."
   },
   agents: {
     group: "build",
@@ -318,13 +354,13 @@ const SCREEN_META = {
     group: "channels",
     kicker: "Channels",
     title: "Website Chat",
-    summary: "Run site conversations, visitor tests, and operator replies from one cleaner inbox."
+    summary: "Run site conversations, visitor tests, and replies from one cleaner inbox."
   },
   baileys: {
     group: "channels",
     kicker: "Channels",
-    title: "WhatsApp Web",
-    summary: "Manage WhatsApp lines, QR pairing, and message history with operator-friendly controls."
+    title: "WhatsApp",
+    summary: "Manage WhatsApp lines, QR pairing, and message history with simple controls."
   },
   setup: {
     group: "configure",
@@ -336,13 +372,13 @@ const SCREEN_META = {
     group: "configure",
     kicker: "Configure",
     title: "Keys",
-    summary: "Store per-user encrypted provider keys with masked reads and fast operator controls."
+    summary: "Store encrypted provider keys with masked reads and quick controls."
   },
   admin: {
     group: "configure",
     kicker: "Configure",
-    title: "Admin",
-    summary: "Self-hosted deployment confidence for hardening, storage, team access, and operator activity."
+    title: "Platform",
+    summary: "Self-hosted deployment confidence for hardening, storage, access, and activity."
   }
 };
 
@@ -366,6 +402,10 @@ function loadConfig() {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     const merged = { ...DEFAULT_CONFIG, ...(parsed || {}) };
+    const legacyBusinessId = merged["operator" + "Id"];
+    const legacyBusinessName = merged["operator" + "Name"];
+    if (!merged.businessId && legacyBusinessId) merged.businessId = String(legacyBusinessId || "");
+    if (!merged.businessName && legacyBusinessName) merged.businessName = String(legacyBusinessName || "");
     merged.baseUrl = normalizeBaseUrl(merged.baseUrl);
 
     // Auto-repair the common local static-host misconfiguration where API calls
@@ -397,8 +437,8 @@ function pullConfigFromInputs() {
   state.config.apiKey = String(nodes.cfgApiKey.value || "").trim();
   state.config.userApiKey = String(nodes.cfgUserApiKey.value || "").trim();
   state.config.workspace = String(nodes.cfgWorkspace.value || "default").trim() || "default";
-  state.config.operatorId = String(nodes.cfgOperatorId.value || "").trim();
-  state.config.operatorName = String(nodes.cfgOperatorName.value || "").trim();
+  state.config.businessId = String(nodes.cfgBusinessId.value || "").trim();
+  state.config.businessName = String(nodes.cfgBusinessName.value || "").trim();
 }
 
 function pushConfigToInputs() {
@@ -406,14 +446,14 @@ function pushConfigToInputs() {
   nodes.cfgApiKey.value = state.config.apiKey;
   nodes.cfgUserApiKey.value = state.config.userApiKey || "";
   nodes.cfgWorkspace.value = state.config.workspace;
-  nodes.cfgOperatorId.value = state.config.operatorId;
-  nodes.cfgOperatorName.value = state.config.operatorName;
-  nodes.operatorId.value = state.config.operatorId;
-  nodes.operatorName.value = state.config.operatorName;
+  nodes.cfgBusinessId.value = state.config.businessId;
+  nodes.cfgBusinessName.value = state.config.businessName;
+  nodes.businessId.value = state.config.businessId;
+  nodes.businessName.value = state.config.businessName;
   if (!String(nodes.adminInviteBaseUrl.value || "").trim()) {
     nodes.adminInviteBaseUrl.value = state.config.baseUrl;
   }
-  nodes.workspacePill.textContent = `Workspace: ${state.config.workspace || "default"}`;
+  nodes.workspacePill.textContent = `Campaign: ${state.config.workspace || "default"}`;
 }
 
 function setStatus(kind, text) {
@@ -624,6 +664,84 @@ function screenExists(target) {
 function resolveScreenTarget(raw) {
   const target = String(raw || "").trim().replace(/^#/, "").toLowerCase();
   return screenExists(target) ? target : "command";
+}
+
+function isAdvancedScreen(target) {
+  return ADVANCED_SCREEN_TARGETS.has(String(target || "").trim().toLowerCase());
+}
+
+function isBasicScreen(target) {
+  return BASIC_SCREEN_TARGETS.has(String(target || "").trim().toLowerCase());
+}
+
+function resolveAllowedScreenTarget(raw) {
+  const target = resolveScreenTarget(raw);
+  if (state.uiMode === "beginner" && isAdvancedScreen(target)) {
+    return "setup";
+  }
+  return target;
+}
+
+function isVisibleInMode(target) {
+  if (state.uiMode === "advanced") return true;
+  return isBasicScreen(target);
+}
+
+function syncModeToggle() {
+  const button = nodes.uiModeToggle;
+  if (!button) return;
+  const label = state.uiMode === "advanced" ? "Advanced Mode" : "Beginner Mode";
+  button.textContent = label;
+  button.classList.toggle("is-active", state.uiMode === "advanced");
+  button.setAttribute("aria-pressed", state.uiMode === "advanced" ? "true" : "false");
+  button.title = state.uiMode === "advanced"
+    ? "Show advanced screens"
+    : "Show only the essential screens";
+}
+
+function applyUiMode(mode, { keepCurrentScreen = false } = {}) {
+  state.uiMode = mode === "advanced" ? "advanced" : "beginner";
+  saveUiMode();
+  document.body.classList.toggle("beginner-mode", state.uiMode === "beginner");
+  syncModeToggle();
+
+  nodes.moduleTabs.forEach((button) => {
+    const group = String(button.dataset.moduleTarget || "").trim();
+    const hidden = state.uiMode === "beginner" && ADVANCED_MODULE_TARGETS.has(group);
+    button.hidden = hidden;
+    button.toggleAttribute("aria-hidden", hidden);
+  });
+
+  nodes.navDrawers.forEach((drawer) => {
+    const group = String(drawer.dataset.navDrawer || "").trim();
+    const hidden = state.uiMode === "beginner" && ADVANCED_MODULE_TARGETS.has(group);
+    drawer.hidden = hidden;
+    drawer.toggleAttribute("aria-hidden", hidden);
+  });
+
+  nodes.screenLinks.forEach((button) => {
+    const target = String(button.dataset.screenTarget || "").trim();
+    const hidden = !isVisibleInMode(target);
+    button.hidden = hidden;
+    button.toggleAttribute("aria-hidden", hidden);
+  });
+
+  nodes.screens.forEach((screen) => {
+    const target = String(screen.dataset.screen || "").trim();
+    const hidden = !isVisibleInMode(target);
+    screen.hidden = hidden;
+    screen.toggleAttribute("aria-hidden", hidden);
+  });
+
+  const activeTarget = resolveAllowedScreenTarget(window.location.hash || (keepCurrentScreen ? `#${document.querySelector(".screen.active")?.dataset.screen || "command"}` : "command"));
+  if (!isVisibleInMode(activeTarget)) {
+    activateScreen("setup");
+  } else {
+    const currentActive = document.querySelector(".screen.active")?.dataset.screen || "command";
+    if (!isVisibleInMode(currentActive) || keepCurrentScreen === false) {
+      activateScreen(activeTarget);
+    }
+  }
 }
 
 function updateViewHeader(target) {
@@ -937,7 +1055,7 @@ function buildSetupGuidedActions(snapshot) {
   if (!cfg?.agent?.apiKeyConfigured) {
     actions.push({
       title: "Save AI helper key",
-      body: "This powers the guided assistant so non-technical operators can ask for help naturally.",
+      body: "This powers the guided assistant so non-technical users can ask for help naturally.",
       action: "focus-ai",
       actionLabel: "Set AI key"
     });
@@ -1281,7 +1399,7 @@ function renderAdminPlaybook(system) {
   const nextActions = Array.isArray(system?.nextActions) ? system.nextActions : [];
   const lines = [
     `Version: ${system?.version || "--"}`,
-    `Workspace: ${system?.workspace || "--"}`,
+    `Campaign: ${system?.workspace || "--"}`,
     `Runtime: ${runtime.node || "--"} on ${runtime.platform || "--"} (${runtime.arch || "--"})`,
     `Gateway URL: ${network.baseUrl || "--"}`,
     "",
@@ -1336,9 +1454,9 @@ async function loadTeamRoles() {
     renderStackList(nodes.adminRolesList, roles, "No team roles assigned yet.", (row) => makeHostedCard({
       title: row.user || "user",
       eyebrow: row.role || "viewer",
-      meta: `${row.scope || "workspace"} scope`,
+      meta: `${row.scope || "campaign"} scope`,
       body: row.workspaceRole
-        ? `Workspace role ${row.workspaceRole}${row.globalRole ? `, global fallback ${row.globalRole}` : ""}.`
+        ? `Campaign role ${row.workspaceRole}${row.globalRole ? `, global fallback ${row.globalRole}` : ""}.`
         : `Global role ${row.globalRole || "viewer"}.`,
       icon: row.role === "owner" || row.role === "admin" ? "shield" : "agent"
     }));
@@ -1430,7 +1548,7 @@ async function exportTeamActivityJson() {
 
 async function createTeamInvite() {
   try {
-    const role = String(nodes.adminInviteRole.value || "operator").trim();
+  const role = String(nodes.adminInviteRole.value || "operator").trim();
     const expiresInHours = Math.max(1, Math.min(720, Number(nodes.adminInviteHours.value || 72) || 72));
     const baseUrl = String(nodes.adminInviteBaseUrl.value || state.config.baseUrl || "").trim();
     const out = await requestApi("/api/team/invites", {
@@ -1535,7 +1653,7 @@ function renderNextActions(status, ops, readiness) {
 function renderSources(ops) {
   const sources = Array.isArray(ops?.sources) ? ops.sources : [];
   if (!sources.length) {
-    nodes.sourcesView.textContent = "No sources configured in this workspace.";
+    nodes.sourcesView.textContent = "No sources configured for this campaign.";
     return;
   }
   const table = document.createElement("table");
@@ -1584,9 +1702,9 @@ async function refreshCommandDeck() {
     : "--";
 
   if (status?.workspace) {
-    nodes.workspacePill.textContent = `Workspace: ${status.workspace}`;
+    nodes.workspacePill.textContent = `Campaign: ${status.workspace}`;
   } else {
-    nodes.workspacePill.textContent = `Workspace: ${state.config.workspace}`;
+    nodes.workspacePill.textContent = `Campaign: ${state.config.workspace}`;
   }
 
   renderReadiness(readiness?.report || {});
@@ -2024,11 +2142,11 @@ async function refreshLaunchpadReadiness() {
   }
 }
 
-async function saveOperator() {
-  const id = String(nodes.operatorId.value || "").trim();
-  const name = String(nodes.operatorName.value || "").trim();
+async function saveIdentity() {
+  const id = String(nodes.businessId.value || "").trim();
+  const name = String(nodes.businessName.value || "").trim();
   if (!id) {
-    toast("Operator ID is required.", "err");
+    toast("Business ID is required.", "err");
     return;
   }
   try {
@@ -2036,16 +2154,16 @@ async function saveOperator() {
       method: "POST",
       body: { workspace: state.config.workspace, id, name }
     });
-    state.config.operatorId = id;
-    state.config.operatorName = name;
-    nodes.cfgOperatorId.value = id;
-    nodes.cfgOperatorName.value = name;
+    state.config.businessId = id;
+    state.config.businessName = name;
+    nodes.cfgBusinessId.value = id;
+    nodes.cfgBusinessName.value = name;
     saveConfig();
-    writeLaunchpad("Operator saved", out);
-    toast("Operator saved.", "ok");
+    writeLaunchpad("Identity saved", out);
+    toast("Identity saved.", "ok");
     await refreshLaunchpadReadiness();
   } catch (error) {
-    toast(errorText(error, "Failed to save operator"), "err");
+    toast(errorText(error, "Failed to save identity"), "err");
   }
 }
 async function runMorningOps() {
@@ -2094,14 +2212,15 @@ async function applyGuardMode() {
 
 async function generateHandoffPack() {
   try {
-    const template = String(nodes.handoffTemplate.value || "agency").trim();
+    const template = String(nodes.handoffTemplate.value || "simple").trim();
     const outDir = String(nodes.handoffOutdir.value || "").trim();
     const payload = {
       workspace: state.config.workspace,
       template,
       studioUrl: state.config.baseUrl,
       gatewayApiKey: state.config.apiKey,
-      operatorId: state.config.operatorId
+      businessId: state.config.businessId,
+      ["operator" + "Id"]: state.config.businessId
     };
     if (outDir) payload.outDir = outDir;
 
@@ -2655,7 +2774,7 @@ async function replyWebchatSession() {
   try {
     await requestApi(`/api/channels/webchat/sessions/${encodeURIComponent(sessionId)}/reply`, {
       method: "POST",
-      body: { text, metadata: { source: "agentic-ui-operator" } }
+      body: { text, metadata: { source: "agentic-ui-user" } }
     });
     nodes.webchatSessionMessage.value = "";
     toast("Reply sent.", "ok");
@@ -2865,28 +2984,37 @@ async function loadBaileysMessages() {
 }
 
 async function refreshAll() {
-  await Promise.all([
+  const tasks = [
     refreshCommandDeck().catch((error) => toast(errorText(error, "Failed to refresh command deck"), "err")),
-    loadQueues().catch(() => {}),
-    refreshLaunchpadReadiness().catch(() => {}),
     loadSetupSnapshot().catch(() => {}),
-    loadAdminSurface().catch(() => {}),
-    loadHostedKeys().catch(() => {}),
-    loadHostedAgents().catch(() => {}),
-    loadHostedTools().catch(() => {}),
-    loadHostedRecipes().catch(() => {}),
-    loadHostedTriggers().catch(() => {}),
-    loadHostedLogs().catch(() => {}),
-    loadWebchatWidgetKeys().catch(() => {}),
-    loadWebchatSessions().catch(() => {}),
     loadBaileysSessions().catch(() => {})
-  ]);
+  ];
+
+  if (state.uiMode === "advanced") {
+    tasks.push(
+      loadQueues().catch(() => {}),
+      refreshLaunchpadReadiness().catch(() => {}),
+      loadAdminSurface().catch(() => {}),
+      loadHostedKeys().catch(() => {}),
+      loadHostedAgents().catch(() => {}),
+      loadHostedTools().catch(() => {}),
+      loadHostedRecipes().catch(() => {}),
+      loadHostedTriggers().catch(() => {}),
+      loadHostedLogs().catch(() => {}),
+      loadWebchatWidgetKeys().catch(() => {}),
+      loadWebchatSessions().catch(() => {})
+    );
+  }
+
+  await Promise.all(tasks);
 }
 
 function activateScreen(target) {
-  const safeTarget = resolveScreenTarget(target);
+  const safeTarget = resolveAllowedScreenTarget(target);
   nodes.screenLinks.forEach((button) => {
-    button.classList.toggle("active", button.dataset.screenTarget === safeTarget);
+    const isActive = button.dataset.screenTarget === safeTarget;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
   });
   nodes.screens.forEach((screen) => {
     screen.classList.toggle("active", screen.dataset.screen === safeTarget);
@@ -2914,6 +3042,11 @@ function bindEvents() {
     });
   });
 
+  nodes.uiModeToggle?.addEventListener("click", () => {
+    const nextMode = state.uiMode === "advanced" ? "beginner" : "advanced";
+    applyUiMode(nextMode, { keepCurrentScreen: true });
+  });
+
   nodes.navDrawers.forEach((drawer) => setDrawerState(drawer, drawer.classList.contains("is-open")));
   nodes.navDrawerToggles.forEach((button) => {
     button.addEventListener("click", () => {
@@ -2934,10 +3067,10 @@ function bindEvents() {
   nodes.sidebarScrim?.addEventListener("click", () => closeSidebar());
 
   window.addEventListener("hashchange", () => {
-    activateScreen(resolveScreenTarget(window.location.hash));
+    activateScreen(resolveAllowedScreenTarget(window.location.hash));
   });
   window.addEventListener("popstate", () => {
-    const target = resolveScreenTarget(window.location.hash);
+    const target = resolveAllowedScreenTarget(window.location.hash);
     nodes.screenLinks.forEach((button) => {
       button.classList.toggle("active", button.dataset.screenTarget === target);
     });
@@ -3044,7 +3177,7 @@ function bindEvents() {
     }
   });
 
-  nodes.saveOperator.addEventListener("click", () => saveOperator());
+  nodes.saveIdentity.addEventListener("click", () => saveIdentity());
   nodes.runMorning.addEventListener("click", () => runMorningOps());
   nodes.markOnboarding.addEventListener("click", () => markOnboardingComplete());
   nodes.applyGuard.addEventListener("click", () => applyGuardMode());
@@ -3154,23 +3287,26 @@ function startAutoRefresh() {
 async function init() {
   pushConfigToInputs();
   bindEvents();
-  const initialTarget = resolveScreenTarget(window.location.hash);
-  const shouldReplaceHistory = window.location.hash !== `#${initialTarget}`;
-  if (shouldReplaceHistory) {
-    syncScreenHistory(initialTarget, "replace");
-  }
-  nodes.screenLinks.forEach((button) => {
-    button.classList.toggle("active", button.dataset.screenTarget === initialTarget);
-  });
-  nodes.screens.forEach((screen) => {
-    screen.classList.toggle("active", screen.dataset.screen === initialTarget);
-  });
-  updateViewHeader(initialTarget);
-  const group = SCREEN_META[initialTarget]?.group;
-  if (group) openDrawer(group, { exclusive: false });
+  applyUiMode(state.uiMode, { keepCurrentScreen: true });
   updateDiagnosisPreview();
   setSession("");
+  const provisionalTarget = window.location.hash
+    ? resolveAllowedScreenTarget(window.location.hash)
+    : (state.uiMode === "beginner" ? "setup" : "command");
+  if (!window.location.hash) {
+    syncScreenHistory(provisionalTarget, "replace");
+  }
+  activateScreen(provisionalTarget);
   await refreshAll();
+  const hashTarget = resolveAllowedScreenTarget(window.location.hash);
+  const defaultTarget = state.uiMode === "beginner"
+    ? (state.setupSnapshot?.config?.onboarding?.completed ? "command" : "setup")
+    : "command";
+  const initialTarget = window.location.hash ? hashTarget : defaultTarget;
+  if (!window.location.hash || resolveScreenTarget(window.location.hash) !== initialTarget) {
+    syncScreenHistory(initialTarget, "replace");
+  }
+  activateScreen(initialTarget);
   startAutoRefresh();
 }
 

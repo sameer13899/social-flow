@@ -8,6 +8,15 @@ Deterministic CLI for Meta profile, post, and ads workflows.
 
 Social Flow now standardizes on the latest deterministic CLI path. The shipped `social` binary, the dev entrypoint, and the TypeScript `cli/` source all resolve to the same command surface and the same `~/.social-flow/config.json` store.
 
+For the beginner-first path, start with the unified first-run flow, then open Studio:
+
+```bash
+social start-here
+social studio
+```
+
+The Studio app is served at `/studio/app/`, opens on `Start Here` in Beginner Mode, and keeps that mode persisted per browser.
+
 ## Quickstart
 
 ```bash
@@ -54,17 +63,18 @@ social ai --provider deterministic "create post \"Hello\" page 12345"
 social hatch
 ```
 
-## Hatch UI
+## Studio
 
-Launch the agentic terminal UI with:
+Launch the Studio app with:
 
 ```bash
-social hatch
+social studio
 ```
 
-Onboarding notes:
+That opens the canonical Studio route at `/studio/app/`. Onboarding notes:
 - Facebook/Instagram: opens Graph Explorer to generate a token.
 - WhatsApp: opens Meta App Dashboard (WhatsApp API Setup) for token generation.
+- `social studio --frontend-path ...` is available for local or external custom frontends, but it is not the primary app path.
 
 ## WhatsApp Send Safety
 
