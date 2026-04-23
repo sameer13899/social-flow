@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const packageJson = require('../package.json');
 const chalk = require('chalk');
 const { openUrl } = require('../lib/open-url');
@@ -113,6 +113,39 @@ function studioRuntimeDir() {
   return dir;
 }
 
+function canUseBun() {
+  try {
+    const result = spawnSync('bun', ['--version'], { stdio: 'ignore' });
+    return !result.error && result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function resolveBunStudioScript() {
+  const candidates = [
+    path.join(__dirname, '..', 'scripts', 'bun', 'studio-serve.ts'),
+    path.join(__dirname, '..', '..', 'scripts', 'bun', 'studio-serve.ts')
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+function startFrontendBunServer({ root, port, logFile, gatewayUrl, gatewayApiKey }) {
+  const bunCommand = 'bun';
+  const scriptPath = resolveBunStudioScript();
+  const outFd = fs.openSync(logFile, 'a');
+  const child = spawn(bunCommand, [scriptPath, root, String(port), gatewayUrl, gatewayApiKey || ''], {
+    cwd: root,
+    detached: true,
+    stdio: ['ignore', outFd, outFd],
+    env: process.env,
+    windowsHide: true
+  });
+  child.unref();
+  fs.closeSync(outFd);
+  return child.pid;
+}
+
 async function waitForUrl(url, timeoutMs = 20000) {
   const startedAt = Date.now();
   let probe = { status: 0, data: {} };
@@ -133,6 +166,16 @@ async function waitForUrl(url, timeoutMs = 20000) {
 }
 
 function startFrontendStaticServer({ root, port, logFile, gatewayUrl, gatewayApiKey }) {
+  if (canUseBun()) {
+    return startFrontendBunServer({
+      root,
+      port,
+      logFile,
+      gatewayUrl,
+      gatewayApiKey
+    });
+  }
+
   const script = `
 const fs=require('fs');
 const path=require('path');
@@ -231,7 +274,7 @@ function startFrontendDevServer({ root, port, logFile, gatewayUrl, gatewayApiKey
 function frontendStartHint({ projectRoot, port, logFile, mode }) {
   const root = String(projectRoot || '').trim() || '.';
   const launch = mode === 'static'
-    ? `py -m http.server ${port} --directory "${root}"`
+    ? `bun ${path.join('scripts', 'bun', 'studio-serve.ts')} "${root}" ${port} "http://127.0.0.1:1310" ""`
     : `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`;
   const lines = [
     `Start manually in ${root}:`,
@@ -354,10 +397,10 @@ async function resolveFrontendUrl({
 function registerStudioCommand(program) {
   program
     .command('studio')
-    .description('Open the Social Flow Studio app (or external/local frontend) and verify gateway status')
+    .description('Open the canonical Social Flow Studio app at /studio/app/ and verify gateway status')
     .option('--url <url>', 'Gateway base URL', 'http://127.0.0.1:1310')
-    .option('--frontend-url <url>', 'External Studio/frontend URL to open', process.env.SOCIAL_STUDIO_URL || '')
-    .option('--frontend-path <path>', 'Local frontend path (Vite project root or built static directory)')
+    .option('--frontend-url <url>', 'Custom Studio/frontend URL to open', process.env.SOCIAL_STUDIO_URL || '')
+    .option('--frontend-path <path>', 'Custom local frontend path (Vite project root or built static directory)')
     .option('--frontend-port <port>', 'Local Studio frontend port when using --frontend-path', '4173')
     .option('--gateway-api-key <key>', 'Optional gateway key to pass to local frontend as VITE env')
     .option('--no-open', 'Do not open Studio page in browser')

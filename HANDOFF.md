@@ -1,5 +1,24 @@
 # Handoff - 2026-02-24
 
+## Update - 2026-04-22
+
+### Beginner-First Studio Checkpoint
+
+- Studio now routes immediately to `Setup` on first load in Beginner Mode instead of waiting for async bootstrap to finish.
+- Beginner Mode persistence is now covered by a reusable browser smoke script:
+  - `npm run smoke:frontend`
+- Public docs now consistently refer to the beginner-first `Start Here` / `Setup` flow instead of the older command-deck framing.
+- `social onboard` now launches `social studio` at the end of a successful onboarding run instead of auto-starting Hatch.
+
+### Validation Run
+
+- `node --check docs/agentic-frontend/app.js`
+  - Result: passed
+- `git diff --check`
+  - Result: passed
+- `npm run smoke:frontend`
+  - Result: passed in local browser smoke with stubbed gateway responses
+
 ## Summary
 
 This handoff captures the current TypeScript migration status and release readiness for `social-flow`.
@@ -347,5 +366,3 @@ Priority order for reducing friction and improving beginner usability across ter
   - `handoff-*.md`
   - `HANDOFF_*.md`
   - `handoff-*/`
-
-

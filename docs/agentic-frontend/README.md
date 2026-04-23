@@ -1,14 +1,20 @@
 # Social Flow Studio
 
-This folder contains the Studio frontend served by the gateway at `/studio/app/`.
+This folder contains the canonical Studio frontend served by the gateway at `/studio/app/`.
+
+The UX is beginner-first by default:
+
+- `Start Here` is the landing screen
+- Beginner mode hides advanced build/run/config surfaces
+- Advanced mode is persisted in local storage per browser
 
 ## Included Screens
 
-- `Command Deck`: readiness, risk pressure, and source health
+- `Campaign Home`: readiness, risk pressure, and source health
 - `Agent Copilot`: conversation-first control with plan preview + live websocket events
 - `Approvals Center`: pending approvals and open alerts with resolve/ack actions
 - `Ads Diagnosis`: form wrapper for `social marketing diagnose-poor-ads`
-- `Ops Launchpad`: operator setup, morning run, guard mode, and handoff generation
+- `Launchpad`: identity setup, morning run, guard mode, and handoff generation
 - `Keys`: BYOK encrypted key vault management (`/api/keys`)
 - `Agents`: built-in + user-defined agent registry (`/api/agents`)
 - `Tools`: typed tool registry with schema metadata (`/api/tools`)
@@ -39,12 +45,18 @@ social gateway --host 127.0.0.1 --port 1310
 2. Serve this folder as static files:
 
 ```bash
-py -m http.server 4173 --directory docs/agentic-frontend
+bun scripts/bun/studio-serve.ts docs/agentic-frontend 4173 http://127.0.0.1:1310
 ```
 
 3. Open:
 
 - `http://127.0.0.1:4173`
+
+If you want a quick local check of the mode switch and startup route, run:
+
+```bash
+npm run smoke:frontend
+```
 
 4. In the app settings panel, set:
 
@@ -52,9 +64,9 @@ py -m http.server 4173 --directory docs/agentic-frontend
 - Gateway API key: if your gateway requires `x-gateway-key`
 - User API key: required for hosted multi-agent routes (`x-api-key`)
 
-## Optional Launch Via `social studio`
+## Custom Launches
 
-If you host this frontend somewhere (local or cloud), use:
+If you host this frontend somewhere else, use:
 
 ```bash
 social studio --url http://127.0.0.1:1310 --frontend-url http://127.0.0.1:4173
@@ -66,3 +78,4 @@ For a local Vite Studio project folder:
 social studio --url http://127.0.0.1:1310 --frontend-path C:\Users\you\Downloads\social-flow-ui
 ```
 
+`social studio --frontend-path ...` is for custom frontend projects and built assets. The default app path remains `/studio/app/`.

@@ -171,13 +171,15 @@ The Studio frontend source lives at:
 
 It includes:
 
-- Command Deck
+- Start Here
 - Agent Copilot
 - Approvals Center
 - Ads Diagnosis
 - Ops Launchpad
 - Setup Concierge
 - Workspace Admin
+
+Beginner mode hides the advanced surfaces and routes first-time users to `Start Here` plus `Setup` until onboarding is complete.
 
 ## Files
 
@@ -188,11 +190,15 @@ It includes:
 
 `social studio` supports:
 
-- `--frontend-url <url>` for already-hosted UI
-- `--frontend-path <path>` for local Studio projects (auto-starts local dev server or static host)
+- `--frontend-url <url>` for an already-hosted custom UI
+- `--frontend-path <path>` for a local custom frontend project, built output, or static directory
 
 Default behavior:
 
 - Without frontend overrides, `social studio` opens the Studio app route: `/studio/app/`
 - `/studio` remains the human-friendly entry route and redirects to `/studio/app/`
 
+Canonical path:
+
+- `social start-here`
+- `social studio`

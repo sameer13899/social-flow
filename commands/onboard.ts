@@ -18,6 +18,11 @@ const API_LABELS = {
   instagram: 'Instagram',
   whatsapp: 'WhatsApp'
 };
+const API_CONTEXT_LABELS = {
+  facebook: 'Facebook ads',
+  instagram: 'Instagram ads',
+  whatsapp: 'WhatsApp Business'
+};
 
 function runSubprocess(args) {
   return new Promise((resolve, reject) => {
@@ -121,7 +126,7 @@ function buildWorkspaceRows(snapshot) {
   return [
     kv('Profile', chalk.cyan(snapshot.profile), { labelWidth: 18 }),
     kv(
-      'Operator',
+      'Owner',
       snapshot.operator.name
         ? `${chalk.cyan(snapshot.operator.name)} ${chalk.gray(`(${snapshot.operator.id || 'pending'})`)}`
         : snapshot.operator.id
@@ -154,22 +159,22 @@ function buildWorkspaceRows(snapshot) {
 function buildApiChoiceLabel(snapshot, api) {
   const token = String(snapshot.tokenMap[api] || '').trim();
   const suffix = token ? chalk.gray(`(${formatTokenPreview(token)})`) : chalk.gray('(new connection)');
-  return `${API_LABELS[api]} ${suffix}`;
+  return `${API_CONTEXT_LABELS[api]} ${suffix}`;
 }
 
 async function promptSecurityAcknowledgement() {
   printStage('Security');
   printPanel('Security warning', [
-    chalk.gray('Social Flow stores tokens locally for the active operator profile.'),
+    chalk.gray('Social Flow stores tokens locally on this machine for the active profile.'),
     chalk.gray('Only connect accounts you control and avoid pasting secrets into shared terminals.'),
-    chalk.gray('If this workstation is shared, lock it down before enabling WhatsApp or ads access.')
+    chalk.gray('If this laptop is shared, lock it down before enabling Facebook, Instagram, or WhatsApp access.')
   ]);
 
   const answer = await inquirer.prompt([
     {
       type: 'confirm',
       name: 'ok',
-      message: 'I understand this workspace is operator-owned and tokens should stay local. Continue?',
+      message: 'I understand this setup is private and tokens should stay local. Continue?',
       default: true
     }
   ]);
@@ -184,16 +189,16 @@ async function promptOperator(snapshot, opts) {
   const currentName = snapshot.operator.name || snapshot.operator.id;
   if (opts.quick && currentName) return;
 
-  printStage('Operator identity');
-  printPanel('Operator', [
-    chalk.gray('This name is used for audit trails, approvals, and activity attribution inside Social Flow.')
+  printStage('Business identity');
+  printPanel('Business identity', [
+    chalk.gray('This name is used for saved defaults and activity attribution inside Social Flow.')
   ]);
 
   const answer = await inquirer.prompt([
     {
       type: 'input',
       name: 'name',
-      message: 'Who is operating this workspace?',
+      message: 'What name should we use for this setup?',
       default: currentName || process.env.SOCIAL_USER || process.env.USERNAME || process.env.USER || ''
     }
   ]);
@@ -217,7 +222,7 @@ async function promptPrimaryApi(snapshot) {
     {
       type: 'list',
       name: 'api',
-      message: 'Which surface should Social Flow connect first?',
+      message: 'What do you want to set up first?',
       choices: API_ORDER.map((api) => ({
         name: buildApiChoiceLabel(snapshot, api),
         value: api
@@ -234,11 +239,11 @@ async function promptExtraApis(primaryApi) {
     {
       type: 'checkbox',
       name: 'apis',
-      message: 'Connect anything else in this pass?',
+      message: 'Connect another channel too?',
       choices: API_ORDER
         .filter((api) => api !== primaryApi)
         .map((api) => ({
-          name: API_LABELS[api],
+          name: API_CONTEXT_LABELS[api],
           value: api
         }))
     }
@@ -252,7 +257,7 @@ async function promptExistingTokenAction(api) {
     {
       type: 'list',
       name: 'action',
-      message: `${API_LABELS[api]} is already linked. What do you want to do?`,
+      message: `${API_CONTEXT_LABELS[api]} is already linked. What do you want to do?`,
       choices: [
         { name: 'Keep current connection', value: 'keep' },
         { name: 'Re-link now', value: 'relink' },
@@ -270,7 +275,7 @@ async function promptMissingTokenAction(api) {
     {
       type: 'list',
       name: 'action',
-      message: `${API_LABELS[api]} is not linked yet.`,
+      message: `${API_CONTEXT_LABELS[api]} is not linked yet.`,
       choices: [
         { name: 'Connect now (recommended)', value: 'connect' },
         { name: 'Skip for now', value: 'skip' }
@@ -294,7 +299,7 @@ async function promptLoginMode(api, snapshot, opts) {
     {
       type: 'list',
       name: 'mode',
-      message: `How should Social Flow connect ${API_LABELS[api]}?`,
+      message: `How should Social Flow connect ${API_CONTEXT_LABELS[api]}?`,
       choices: snapshot.appConfigured
         ? [
             { name: 'Use browser OAuth (recommended)', value: 'oauth' },
@@ -322,8 +327,8 @@ async function connectApi(api, opts) {
   let snapshot = buildOnboardingSnapshot();
   const existingToken = String(snapshot.tokenMap[api] || '').trim();
 
-  printStage(`${API_LABELS[api]} connection`);
-  printPanel(`${API_LABELS[api]} status`, [
+  printStage(`${API_CONTEXT_LABELS[api]} connection`);
+  printPanel(`${API_CONTEXT_LABELS[api]} status`, [
     kv('Current state', tokenBadge(Boolean(existingToken)), { labelWidth: 16 }),
     kv('Profile', chalk.cyan(snapshot.profile), { labelWidth: 16 }),
     kv('Meta app', snapshot.appConfigured ? formatBadge('READY', { tone: 'success' }) : formatBadge('OPTIONAL', { tone: 'neutral' }), { labelWidth: 16 })
@@ -339,7 +344,7 @@ async function connectApi(api, opts) {
 
   snapshot = buildOnboardingSnapshot();
   const updatedToken = String(snapshot.tokenMap[api] || '').trim();
-  printPanel(`${API_LABELS[api]} updated`, [
+  printPanel(`${API_CONTEXT_LABELS[api]} updated`, [
     kv('Mode', mode === 'oauth' ? 'browser oauth' : 'manual token', { labelWidth: 16 }),
     kv('Connection', tokenBadge(Boolean(updatedToken)), { labelWidth: 16 }),
     kv('Token preview', updatedToken ? chalk.gray(formatTokenPreview(updatedToken)) : chalk.gray('not linked'), { labelWidth: 16 })
@@ -351,8 +356,8 @@ function hasAnyConnectedToken(snapshot) {
 }
 
 function printCompletion(snapshot) {
-  printStage('Ready');
-  printPanel('Workspace ready', readyLines({ profile: snapshot.profile }).map((line) => {
+  printStage('Ready to run ads');
+  printPanel('Campaign setup ready', readyLines({ profile: snapshot.profile }).map((line) => {
     if (/^\d+\./.test(line)) return chalk.cyan(line);
     if (line === 'You are now ready.') return chalk.green.bold(line);
     return chalk.gray(line);
@@ -362,14 +367,15 @@ function printCompletion(snapshot) {
 function registerOnboardCommand(program) {
   program
     .command('onboard')
-    .description('Interactive onboarding wizard (tokens + operator identity + health checks)')
+    .description('Interactive onboarding wizard for Facebook, Instagram, and WhatsApp ads')
     .option('--quick', 'Only connect one API and skip optional prompts', false)
-    .option('--no-hatch', 'Do not auto-start hatch UI after onboarding')
+    .option('--no-studio', 'Do not auto-start Studio after onboarding', false)
+    .option('--no-hatch', 'Deprecated alias for --no-studio', false)
     .action(async (opts) => {
       const initialSnapshot = buildOnboardingSnapshot();
 
-      printStage('Social Flow onboarding');
-      printPanel('Workspace snapshot', buildWorkspaceRows(initialSnapshot));
+      printStage('Social Flow ads setup');
+      printPanel('Setup snapshot', buildWorkspaceRows(initialSnapshot));
 
       await promptSecurityAcknowledgement();
       await promptOperator(initialSnapshot, opts);
@@ -382,7 +388,7 @@ function registerOnboardCommand(program) {
       printStage('Selected channels');
       printPanel('Channels', apiPlan.map((api, index) => {
         const token = String(buildOnboardingSnapshot().tokenMap[api] || '').trim();
-        return `${index + 1}. ${API_LABELS[api]} ${token ? chalk.gray(`(${formatTokenPreview(token)})`) : chalk.gray('(pending login)')}`;
+        return `${index + 1}. ${API_CONTEXT_LABELS[api]} ${token ? chalk.gray(`(${formatTokenPreview(token)})`) : chalk.gray('(pending login)')}`;
       }), 66);
 
       for (const api of apiPlan) {
@@ -398,7 +404,7 @@ function registerOnboardCommand(program) {
         printPanel('Onboarding incomplete', [
           chalk.yellow('No platform was linked in this pass.'),
           chalk.gray('Run `social onboard` again or connect one API with `social auth login -a <api>`.'),
-          chalk.gray('Hatch will stay locked until at least one API is configured.')
+          chalk.gray('Studio will stay locked until at least one API is configured.')
         ]);
         process.exit(1);
       }
@@ -407,9 +413,9 @@ function registerOnboardCommand(program) {
       const completedSnapshot = buildOnboardingSnapshot();
       printCompletion(completedSnapshot);
 
-      if (process.stdout.isTTY && opts.hatch !== false) {
-        console.log(chalk.yellow('Launching Hatch...\n'));
-        await runSubprocess(['hatch', '--skip-onboard-check']);
+      if (process.stdout.isTTY && opts.studio !== false && opts.hatch !== false) {
+        console.log(chalk.yellow('Launching Studio...\n'));
+        await runSubprocess(['studio']);
       }
     });
 }

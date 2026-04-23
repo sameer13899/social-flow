@@ -23,14 +23,14 @@
         <div class="brand-mark">
           <span class="brand-badge">SF</span>
           <div>
-            <p class="eyebrow">Workspace</p>
+            <p class="eyebrow">Studio</p>
             <h1>Social Flow</h1>
           </div>
         </div>
-        <p class="brand-copy">A shared workspace for operators, automations, and live conversations. Read the room in Overview, act in Run, shape systems in Build, handle inboxes in Channels, and keep trust work in Configure.</p>
+        <p class="brand-copy">A simple ads studio for people who want to run Facebook, Instagram, and WhatsApp campaigns without learning a control plane. Check setup, launch work, and manage messages from one place.</p>
         <div class="brand-flags">
           <span class="brand-flag">Desktop studio</span>
-          <span class="brand-flag soft">Embedded runtime</span>
+          <span class="brand-flag soft">Local runtime</span>
         </div>
         <div class="brand-path" aria-label="Studio lanes">
           <span class="brand-step">Overview</span>
@@ -57,29 +57,29 @@
 
       <div class="module-switcher" role="tablist" aria-label="Studio modules">
         <button type="button" class="module-tab active" data-module-target="overview" data-module-screen="command">
-          <span class="module-tab-eyebrow">Overview</span>
+          <span class="module-tab-eyebrow">Start</span>
           <strong>Read the state</strong>
           <small>command, approvals, logs</small>
         </button>
         <button type="button" class="module-tab" data-module-target="run" data-module-screen="copilot">
-          <span class="module-tab-eyebrow">Run</span>
+          <span class="module-tab-eyebrow">Ads</span>
           <strong>Execute work</strong>
           <small>copilot, diagnosis, launchpad</small>
         </button>
         <button type="button" class="module-tab" data-module-target="build" data-module-screen="agents">
-          <span class="module-tab-eyebrow">Build</span>
+          <span class="module-tab-eyebrow">Tools</span>
           <strong>Shape capability</strong>
           <small>agents, tools, recipes, triggers</small>
         </button>
         <button type="button" class="module-tab" data-module-target="channels" data-module-screen="webchat">
-          <span class="module-tab-eyebrow">Channels</span>
+          <span class="module-tab-eyebrow">Messages</span>
           <strong>Handle conversations</strong>
           <small>webchat, WhatsApp</small>
         </button>
         <button type="button" class="module-tab" data-module-target="configure" data-module-screen="setup">
-          <span class="module-tab-eyebrow">Configure</span>
+          <span class="module-tab-eyebrow">Setup</span>
           <strong>Manage trust</strong>
-          <small>setup, keys, admin</small>
+          <small>setup, keys, platform</small>
         </button>
       </div>
 
@@ -129,13 +129,13 @@
               <span class="nav-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 16V9"/><path d="M12 16V5"/><path d="M17 16v-4"/></svg>
               </span>
-              <span class="nav-copy"><strong>Ads Diagnosis</strong><small>operator diagnosis form</small></span>
+              <span class="nav-copy"><strong>Ads Diagnosis</strong><small>simple diagnosis form</small></span>
             </button>
             <button type="button" class="screen-link" data-screen-target="launchpad" data-nav-group="run">
               <span class="nav-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="M5 19h14"/><path d="M8 16l4-11 4 11"/><path d="M9.5 12h5"/></svg>
               </span>
-              <span class="nav-copy"><strong>Launchpad</strong><small>guardrails, runbooks, routines</small></span>
+              <span class="nav-copy"><strong>Launchpad</strong><small>guardrails, routines, first steps</small></span>
             </button>
           </div>
         </section>
@@ -178,7 +178,7 @@
           <div class="module-panel-head">
             <p class="eyebrow">Channels</p>
             <h2>Handle conversations</h2>
-            <p class="micro-copy">Keep inbound conversations and operator replies together instead of scattering them across the app.</p>
+            <p class="micro-copy">Keep inbound conversations and replies together instead of scattering them across the app.</p>
           </div>
           <div class="nav-drawer-body">
             <button type="button" class="screen-link" data-screen-target="webchat" data-nav-group="channels">
@@ -200,7 +200,7 @@
           <div class="module-panel-head">
             <p class="eyebrow">Configure</p>
             <h2>Manage trust</h2>
-            <p class="micro-copy">Keep setup, keys, and admin in one place so policy work is separate from live operations.</p>
+            <p class="micro-copy">Keep setup, keys, and platform settings in one place so policy work stays separate from live actions.</p>
           </div>
           <div class="nav-drawer-body">
             <button type="button" class="screen-link" data-screen-target="setup" data-nav-group="configure">
@@ -219,7 +219,7 @@
               <span class="nav-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="M12 3l7 4v5c0 4.2-2.4 7.2-7 9-4.6-1.8-7-4.8-7-9V7l7-4Z"/><path d="M8.5 12.5l2.2 2.2 4.8-5"/></svg>
               </span>
-              <span class="nav-copy"><strong>Admin</strong><small>team, storage, hardening</small></span>
+              <span class="nav-copy"><strong>Platform</strong><small>storage, safety, hardening</small></span>
             </button>
           </div>
         </section>
@@ -227,22 +227,22 @@
 
       <section class="card gateway-config">
         <div class="gateway-head">
-          <p class="eyebrow">Workspace Context</p>
-          <h2>Connection + operator identity</h2>
-          <p class="micro-copy">Keep the gateway, workspace, and operator settings together here. These values stay in this browser only.</p>
+          <p class="eyebrow">Campaign Context</p>
+          <h2>Connection + business identity</h2>
+          <p class="micro-copy">Keep the gateway, campaign, and identity settings together here. These values stay in this browser only.</p>
         </div>
 
         <label for="cfg-base-url">Gateway URL</label>
         <input id="cfg-base-url" type="text" placeholder="http://127.0.0.1:1310" />
 
-        <label for="cfg-workspace">Workspace</label>
+        <label for="cfg-workspace">Campaign</label>
         <input id="cfg-workspace" type="text" placeholder="default" />
 
-        <label for="cfg-operator-id">Operator ID</label>
-        <input id="cfg-operator-id" type="text" placeholder="ops-owner" />
+        <label for="cfg-business-id">Business ID</label>
+        <input id="cfg-business-id" type="text" placeholder="my-business" />
 
-        <label for="cfg-operator-name">Operator Name</label>
-        <input id="cfg-operator-name" type="text" placeholder="Your Name" />
+        <label for="cfg-business-name">Business or Creator Name</label>
+        <input id="cfg-business-name" type="text" placeholder="Your Name" />
 
         <label for="cfg-api-key">Gateway API Key</label>
         <input id="cfg-api-key" type="password" placeholder="x-gateway-key (if required)" />
@@ -267,16 +267,17 @@
           </button>
           <div class="view-copy">
             <p id="view-kicker" class="eyebrow topbar-kicker">Overview</p>
-            <h2 id="view-title">Command Deck</h2>
-            <p id="view-summary" class="muted">Use the home screen to confirm readiness, triage approvals, and choose the next lane.</p>
+            <h2 id="view-title">Start Here</h2>
+            <p id="view-summary" class="muted">Connect your accounts, confirm readiness, and see the next safe step.</p>
           </div>
         </div>
         <div class="topbar-actions">
           <div class="status-cluster">
             <span id="status-pill" class="pill warn">Gateway: checking</span>
-            <span id="workspace-pill" class="pill soft">Workspace: --</span>
+            <span id="workspace-pill" class="pill soft">Campaign: --</span>
             <span id="session-pill" class="pill soft">Copilot: waiting</span>
           </div>
+          <button id="ui-mode-toggle" type="button" class="secondary">Beginner Mode</button>
           <button id="refresh-all" type="button" class="secondary">Refresh Data</button>
         </div>
       </header>
@@ -284,17 +285,17 @@
       <section id="screen-command" class="screen active" data-screen="command">
         <article class="card hero-stage command-stage">
           <div class="hero-copy">
-            <p class="eyebrow">Workspace overview</p>
-            <h2>Keep every lane <span>in sync.</span></h2>
-            <p class="muted hero-muted">Use the command deck as the shared home for readiness, approvals, and source posture. From there, move into execution, build systems, or work live conversations without collapsing everything into one noisy screen.</p>
+            <p class="eyebrow">Campaign overview</p>
+            <h2>Keep your ads <span>in sync.</span></h2>
+            <p class="muted hero-muted">Use the command deck as the shared home for readiness, approvals, and source posture. From there, move into setup, execution, or messages without collapsing everything into one noisy screen.</p>
             <div class="hero-badges">
-              <span class="hero-badge">Desktop workspace</span>
+              <span class="hero-badge">Desktop studio</span>
               <span class="hero-badge">Embedded gateway</span>
               <span class="hero-badge">Shared state</span>
             </div>
             <div class="hero-kpi-strip">
               <div class="hero-kpi">
-                <span>Operator lanes</span>
+                <span>Setup steps</span>
                 <strong>5</strong>
               </div>
               <div class="hero-kpi">
@@ -308,7 +309,7 @@
             </div>
           </div>
 
-          <div class="hero-console operator-loop">
+          <div class="hero-console campaign-loop">
             <div class="hero-console-head">
               <span class="console-dot"></span>
               <span class="console-dot"></span>
@@ -334,12 +335,12 @@
               <button type="button" class="screen-link workflow-card" data-screen-target="webchat" data-nav-group="channels">
                 <span class="workflow-card-eyebrow">Channels</span>
                 <strong class="workflow-card-title">Handle conversations</strong>
-                <span class="workflow-card-copy">Webchat and WhatsApp surfaces stay grouped for faster operator response.</span>
+                <span class="workflow-card-copy">Webchat and WhatsApp surfaces stay grouped for faster replies.</span>
               </button>
               <button type="button" class="screen-link workflow-card" data-screen-target="setup" data-nav-group="configure">
                 <span class="workflow-card-eyebrow">Configure</span>
                 <strong class="workflow-card-title">Manage trust and setup</strong>
-                <span class="workflow-card-copy">Keys, policy, and admin changes stay separate from action screens.</span>
+                <span class="workflow-card-copy">Keys, policy, and platform settings stay separate from action screens.</span>
               </button>
               <div class="workflow-card workflow-card-note" aria-hidden="true">
                 <span class="workflow-card-eyebrow">Operating model</span>
@@ -351,8 +352,8 @@
         </article>
 
         <div class="screen-head">
-          <h2>Command Deck</h2>
-          <p class="muted">Use the deck as the home screen: confirm readiness, triage approvals, and jump into the right lane without hunting for tools.</p>
+          <h2>Start Here</h2>
+          <p class="muted">Connect your accounts, confirm readiness, and move into the next safe step without hunting for tools.</p>
         </div>
 
         <div class="metric-grid">
@@ -480,7 +481,7 @@
       <section id="screen-diagnose" class="screen" data-screen="diagnose">
         <div class="screen-head">
           <h2>Ads Diagnosis</h2>
-          <p class="muted">Run `diagnose-poor-ads` from a user-friendly form and capture immediate operator actions.</p>
+          <p class="muted">Run `diagnose-poor-ads` from a user-friendly form and capture immediate next steps.</p>
         </div>
 
         <article class="card">
@@ -541,20 +542,20 @@
 
       <section id="screen-launchpad" class="screen" data-screen="launchpad">
         <div class="screen-head">
-          <h2>Ops Launchpad</h2>
-          <p class="muted">One-click operational flows for team onboarding, guardrails, and recurring routines.</p>
+          <h2>Setup Launchpad</h2>
+          <p class="muted">One-click flows for setup, guardrails, and recurring routines.</p>
         </div>
 
         <div class="dual-grid">
           <article class="card">
-            <h3>Operator + Daily Ops</h3>
-            <label for="operator-id">Operator ID</label>
-            <input id="operator-id" type="text" placeholder="ops-owner" />
-            <label for="operator-name">Operator Name</label>
-            <input id="operator-name" type="text" placeholder="Your Name" />
+            <h3>Business + Daily Setup</h3>
+            <label for="business-id">Business ID</label>
+            <input id="business-id" type="text" placeholder="my-business" />
+            <label for="business-name">Business or Creator Name</label>
+            <input id="business-name" type="text" placeholder="Your Name" />
 
             <div class="row">
-              <button id="save-operator" type="button">Save Operator</button>
+              <button id="save-identity" type="button">Save Identity</button>
             </div>
 
             <label for="morning-spend">Morning Run Spend Override</label>
@@ -580,7 +581,7 @@
             <label for="handoff-template">Handoff Template</label>
             <select id="handoff-template">
               <option value="simple">simple</option>
-              <option value="agency" selected>agency</option>
+              <option value="agency" selected>solo</option>
               <option value="enterprise">enterprise</option>
             </select>
 
@@ -614,7 +615,7 @@
           <article class="card setup-hero-card">
             <p class="eyebrow">Guided Start</p>
             <h3>Pick what you want to finish first</h3>
-            <p class="muted">This onboarding lane is designed for non-technical operators. Use the big actions first, then fine-tune anything below.</p>
+            <p class="muted">This onboarding lane is designed for non-technical users. Use the big actions first, then fine-tune anything below.</p>
             <div class="setup-action-grid">
               <button id="setup-action-connect-whatsapp" type="button" class="setup-action-card">
                 <strong>Connect WhatsApp</strong>
@@ -740,7 +741,7 @@
 
       <section id="screen-admin" class="screen" data-screen="admin">
         <div class="screen-head">
-          <h2>Workspace Admin</h2>
+          <h2>Platform Settings</h2>
           <p class="muted">Self-hosted deployment confidence for versioning, storage, hardening, team access, and operational history.</p>
         </div>
 
@@ -755,7 +756,7 @@
           <article class="card">
             <div class="row spread">
               <h3>System Confidence</h3>
-              <button id="admin-reload" type="button" class="secondary">Reload Admin</button>
+              <button id="admin-reload" type="button" class="secondary">Reload Platform</button>
             </div>
             <div id="admin-checks" class="stack-list">Loading self-hosted checks...</div>
           </article>
@@ -776,7 +777,7 @@
             <h3>Create Team Invite</h3>
             <label for="admin-invite-role">Role</label>
             <select id="admin-invite-role">
-              <option value="operator" selected>operator</option>
+              <option value="operator" selected>member</option>
               <option value="admin">admin</option>
               <option value="viewer">viewer</option>
             </select>
@@ -824,7 +825,7 @@
         </article>
 
         <article class="card">
-          <h3>Admin Output</h3>
+          <h3>Platform Output</h3>
           <pre id="admin-output" class="mono-block">Invite links and export payloads will appear here.</pre>
         </article>
       </section>
@@ -981,14 +982,14 @@
       <section id="screen-webchat" class="screen" data-screen="webchat">
         <div class="screen-head">
           <h2>Website Chat</h2>
-          <p class="muted">For website widget install and testing. An admin creates the install key once; visitors never see or enter it.</p>
+            <p class="muted">For website widget install and testing. A maintainer creates the install key once; visitors never see or enter it.</p>
         </div>
 
         <article class="card">
           <div class="row spread">
             <div>
               <h3>Website Conversations</h3>
-              <p class="micro-copy">This is the operator inbox. Use it to open conversations and reply without touching install settings.</p>
+              <p class="micro-copy">This is the inbox. Use it to open conversations and reply without touching install settings.</p>
             </div>
             <button id="webchat-sessions-reload" type="button" class="secondary">Reload Conversations</button>
           </div>
@@ -1017,7 +1018,7 @@
           <details class="card advanced-panel">
             <summary>
               <div>
-                <p class="eyebrow">Advanced / Admin</p>
+                <p class="eyebrow">Advanced / Internal</p>
                 <h3>Website Widget Install + Test</h3>
                 <p class="micro-copy">Create the install key once, copy it for your site widget, then use this panel only for internal testing.</p>
               </div>
@@ -1033,7 +1034,7 @@
               </div>
               <p class="micro-copy">The full key is only shown when it is created. Visitors never need it.</p>
 
-              <label for="webchat-public-widget-key">Install Key (admin only)</label>
+              <label for="webchat-public-widget-key">Install Key (internal only)</label>
               <input id="webchat-public-widget-key" type="text" placeholder="Shown here when you create a new key" />
               <label for="webchat-public-visitor">Visitor Name or Reference (optional)</label>
               <input id="webchat-public-visitor" type="text" placeholder="pricing-page-visitor" />
@@ -1057,7 +1058,7 @@
         <details class="card advanced-panel">
           <summary>
             <div>
-              <p class="eyebrow">Advanced / Admin</p>
+              <p class="eyebrow">Advanced / Internal</p>
               <h3>Saved Access Keys</h3>
               <p class="micro-copy">Stored keys are shown masked only. Create a new one if you need the full value again.</p>
             </div>
@@ -1083,7 +1084,7 @@
               <span class="step-number">1</span>
               <div>
                 <strong>Create a line</strong>
-                <p>Give the phone a simple name so the operator can find it later.</p>
+                <p>Give the phone a simple name so you can find it later.</p>
               </div>
             </div>
             <div class="step-card">

@@ -74,7 +74,7 @@ function printStartHereHeader(profile, defaultApi, hasToken, hasAgent) {
     kv('Token Ready', hasToken ? formatBadge('YES', { tone: 'success' }) : formatBadge('NO', { tone: 'warn' }), { labelWidth: 16 }),
     kv('AI Ready', hasAgent ? formatBadge('YES', { tone: 'success' }) : formatBadge('NO', { tone: 'warn' }), { labelWidth: 16 }),
     '',
-    chalk.gray('This flow configures AI provider + key + model, then runs setup and health verification.')
+    chalk.gray('This flow gets Facebook, Instagram, and WhatsApp ads ready, then verifies the local runtime.')
   ];
 
   console.log('');
@@ -162,7 +162,7 @@ function registerStartHereCommand(program) {
 
   program
     .command('start-here')
-    .description('Unified first-run flow: AI config + setup + health verification')
+    .description('Unified first-run flow: ads setup + optional AI + health verification')
     .option('--provider <provider>', 'AI provider: ollama|openai|openrouter|xai|anthropic|gemini')
     .option('--model <model>', 'AI model override')
     .option('--api-key <key>', 'AI API key override')
@@ -256,7 +256,8 @@ function registerStartHereCommand(program) {
       }
 
       console.log(chalk.green('Start-here flow complete.'));
-      console.log(chalk.gray(`Next: ${mint('social hatch')} for conversational operations, or ${mint('social studio')} for browser status.\n`));
+      console.log(chalk.gray(`Next: ${mint('social studio')} for the canonical Studio app, or ${mint('social hatch')} for conversational operations.\n`));
+      console.log(chalk.gray(`Beginner path: ${mint('social start-here')} followed by ${mint('social studio')}.\n`));
     });
 }
 
